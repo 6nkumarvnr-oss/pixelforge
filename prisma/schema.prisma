@@ -7,62 +7,53 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum PlanTier {
-  FREE
-  PRO
-  STUDIO
-}
-
-enum SubscriptionStatus {
-  NONE
-  ACTIVE
-  PAST_DUE
-  CANCELED
-}
-
 model User {
-  id                   String             @id
-  email                String             @unique
-  credits              Int                @default(25)
-  favorites            Json               @default("[]")
-  plan                 PlanTier           @default(FREE)
-  subscriptionStatus   SubscriptionStatus @default(NONE)
-  stripeCustomerId     String?            @unique
-  stripeSubscriptionId String?            @unique
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  id                   String       @id
+  email                String       @unique
+  credits              Int          @default(25)
+  favorites            Json         @default("[]")
+  plan                 String       @default("FREE")
+  subscriptionStatus   String       @default("NONE") @map("subscription_status")
+  stripeCustomerId     String?      @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?      @unique @map("stripe_subscription_id")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
   presets              Preset[]
   generations          Generation[]
+
+  @@map("users")
 }
 
 model Preset {
-  id        String   @id @default(cuid())
+  id        String   @id @default(dbgenerated("gen_random_uuid()::text"))
   name      String
   category  String
   tags      String[] @default([])
   prompt    String
   negative  String   @default("")
-  userId    String?
+  userId    String?  @map("user_id")
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([category])
-  @@index([userId])
+  @@index([category], map: "presets_category_idx")
+  @@index([userId], map: "presets_user_id_idx")
+  @@map("presets")
 }
 
 model Generation {
-  id        String   @id @default(cuid())
+  id        String   @id @default(dbgenerated("gen_random_uuid()::text"))
   prompt    String
   negative  String   @default("")
-  imageUrl  String
+  imageUrl  String   @map("image_url")
   metadata  Json
   favorite  Boolean  @default(false)
-  userId    String?
+  userId    String?  @map("user_id")
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([userId, createdAt])
-  @@index([favorite])
+  @@index([userId, createdAt], map: "generations_user_id_created_at_idx")
+  @@index([favorite], map: "generations_favorite_idx")
+  @@map("generations")
 }
