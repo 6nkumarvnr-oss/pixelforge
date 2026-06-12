@@ -232,6 +232,12 @@ export const updateGenerationFavorite = async (authUser: AuthUser | null, genera
   if (!prisma) return null;
 
   const user = await ensureUser(authUser);
+  // Ownership check: only the generation's owner (or anonymous owner for null userId) may update it.
+  const owned = await prisma.generation.findFirst({
+    where: { id: generationId, userId: user ? user.id : null },
+  });
+  if (!owned) return null;
+
   const updated = await prisma.generation.update({
     where: { id: generationId },
     data: { favorite },

@@ -1,5 +1,7 @@
 # Tech Stack
 
+> See `APP_OVERVIEW.md` for the full PixelForge app documentation (features, frontend/backend structure, database schema, security model).
+
 - You are building a React application.
 - Use TypeScript.
 - Use React Router. KEEP the routes in src/App.tsx
