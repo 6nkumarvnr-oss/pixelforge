@@ -41,17 +41,21 @@ import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  fetchPixelForgeAnalytics,
+  fetchPixelForgeHistory,
+  fetchPixelForgePresets,
+  generatePixelForgeImage,
+  type ApiAnalytics,
+  type ApiGeneration,
+  type ApiPreset,
+} from "@/lib/pixelforge-api";
 import { toast } from "sonner";
 
-type Preset = {
-  id: string;
-  name: string;
-  category: string;
+type Preset = Omit<ApiPreset, "userId"> & {
+  userId?: string | null;
   icon: typeof Camera;
   color: string;
-  prompt: string;
-  negative: string;
-  tags: string[];
 };
 
 type GeneratedImage = {
@@ -238,6 +242,36 @@ const makeGeneratedArt = ({
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 };
 
+const presetVisuals: Record<string, Pick<Preset, "icon" | "color">> = {
+  Photography: { icon: Camera, color: "bg-cyan-100 text-cyan-700 border-cyan-200" },
+  "Concept Art": { icon: Zap, color: "bg-violet-100 text-violet-700 border-violet-200" },
+  Portrait: { icon: Aperture, color: "bg-rose-100 text-rose-700 border-rose-200" },
+  Anime: { icon: Sparkles, color: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200" },
+  Architecture: { icon: Layers, color: "bg-amber-100 text-amber-700 border-amber-200" },
+  Vector: { icon: Brush, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  Custom: { icon: Brush, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+};
+
+const decoratePreset = (preset: ApiPreset): Preset => {
+  const visual = presetVisuals[preset.category] ?? presetVisuals.Custom;
+  return { ...preset, icon: visual.icon, color: visual.color };
+};
+
+const mapApiGeneration = (generation: ApiGeneration): GeneratedImage => ({
+  id: generation.id,
+  prompt: generation.prompt,
+  negative: generation.negative,
+  model: generation.metadata.model,
+  aspect: generation.metadata.aspect,
+  resolution: generation.metadata.resolution,
+  seed: generation.metadata.seed,
+  sampler: generation.metadata.sampler,
+  createdAt: generation.createdAt,
+  url: generation.imageUrl,
+  favorite: generation.favorite,
+  style: generation.metadata.style,
+});
+
 const loadHistory = (): GeneratedImage[] => {
   try {
     const stored = localStorage.getItem("pixelforge-history");
@@ -261,8 +295,35 @@ const Index = () => {
   const [colorBoost, setColorBoost] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [history, setHistory] = useState<GeneratedImage[]>(() => loadHistory());
+  const [presetLibrary, setPresetLibrary] = useState<Preset[]>(presets);
+  const [analytics, setAnalytics] = useState<ApiAnalytics | null>(null);
+  const [apiStatus, setApiStatus] = useState<"connecting" | "online" | "fallback">("connecting");
   const [activeFilter, setActiveFilter] = useState("All");
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    Promise.all([fetchPixelForgePresets(), fetchPixelForgeHistory(), fetchPixelForgeAnalytics()])
+      .then(([apiPresets, apiHistory, apiAnalytics]) => {
+        if (!isMounted) return;
+        setPresetLibrary(apiPresets.map(decoratePreset));
+        if (apiHistory.length > 0) {
+          setHistory(apiHistory.map(mapApiGeneration));
+        }
+        setAnalytics(apiAnalytics);
+        setApiStatus("online");
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setApiStatus("fallback");
+        toast.warning("Using local fallback mode until the API is available.");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("pixelforge-history", JSON.stringify(history));
@@ -293,13 +354,14 @@ const Index = () => {
     [aspect, colorBoost, creativity, model, negative, prompt, removeBackground, sampler, seed, upscale],
   );
 
-  const categories = ["All", ...Array.from(new Set(presets.map((preset) => preset.category)))];
-  const visiblePresets = presets.filter((preset) => {
+  const categories = ["All", ...Array.from(new Set(presetLibrary.map((preset) => preset.category)))];
+  const visiblePresets = presetLibrary.filter((preset) => {
     const matchesFilter = activeFilter === "All" || preset.category === activeFilter;
     const matchesSearch = `${preset.name} ${preset.category} ${preset.tags.join(" ")}`.toLowerCase().includes(search.toLowerCase());
     return matchesFilter && matchesSearch;
   });
   const favorites = history.filter((item) => item.favorite);
+  const creditsRemaining = Math.max(0, 248 - (analytics?.totals.creditsUsed ?? history.length));
 
   const applyPreset = (preset: Preset) => {
     setPrompt(preset.prompt);
@@ -323,14 +385,35 @@ const Index = () => {
     setSeed(Math.floor(1000 + Math.random() * 8999));
   };
 
-  const generateImage = () => {
+  const generateImage = async () => {
     if (!prompt.trim()) {
       toast.error("Add a prompt before generating.");
       return;
     }
 
     setIsGenerating(true);
-    window.setTimeout(() => {
+    try {
+      const generation = await generatePixelForgeImage({
+        prompt,
+        negative,
+        model,
+        aspect,
+        resolution,
+        seed,
+        sampler,
+        creativity: creativity[0],
+        upscale,
+        removeBackground,
+        colorBoost,
+        provider: "fallback",
+        style: activeFilter === "All" ? "Custom" : activeFilter,
+      });
+      const generated = mapApiGeneration(generation);
+      setHistory((items) => [generated, ...items].slice(0, 18));
+      fetchPixelForgeAnalytics().then(setAnalytics).catch(() => undefined);
+      setApiStatus("online");
+      toast.success("Image generated through the Nitro API");
+    } catch {
       const url = makeGeneratedArt({
         prompt,
         negative,
@@ -358,9 +441,11 @@ const Index = () => {
         style: activeFilter === "All" ? "Custom" : activeFilter,
       };
       setHistory((items) => [generated, ...items].slice(0, 18));
+      setApiStatus("fallback");
+      toast.warning("API unavailable, generated with local fallback.");
+    } finally {
       setIsGenerating(false);
-      toast.success("Image generated and added to history");
-    }, 850);
+    }
   };
 
   const toggleFavorite = (id: string) => {
@@ -404,15 +489,16 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 rounded-[2rem] border border-white/70 bg-white/70 p-2 shadow-lg shadow-violet-100/70 backdrop-blur md:flex md:items-center">
+        <div className="grid grid-cols-2 gap-2 rounded-[2rem] border border-white/70 bg-white/70 p-2 shadow-lg shadow-violet-100/70 backdrop-blur sm:grid-cols-4 md:flex md:items-center">
           {[
-            ["Credits", "248"],
-            ["Model", model.split(" ")[0]],
+            ["Credits", String(creditsRemaining)],
+            ["Plan", "Free"],
+            ["API", apiStatus],
             ["Favorites", String(favorites.length)],
           ].map(([label, value]) => (
             <div key={label} className="rounded-3xl bg-white px-4 py-2 text-center shadow-sm">
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</p>
-              <p className="text-sm font-black text-slate-900">{value}</p>
+              <p className="text-sm font-black capitalize text-slate-900">{value}</p>
             </div>
           ))}
         </div>
@@ -652,7 +738,7 @@ const Index = () => {
               <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Favorites</p>
             </div>
             <div className="rounded-[1.4rem] bg-white p-4 text-center shadow-sm">
-              <p className="text-2xl font-black text-cyan-700">4</p>
+              <p className="text-2xl font-black text-cyan-700">{Object.keys(analytics?.modelUsage ?? {}).length || models.length}</p>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Models</p>
             </div>
           </div>
@@ -664,7 +750,7 @@ const Index = () => {
               <div className="rounded-[1.75rem] border border-dashed border-violet-200 bg-white/70 p-6 text-center">
                 <ImageIcon className="mx-auto mb-3 h-10 w-10 text-violet-400" />
                 <h3 className="font-black text-slate-950">No generated images yet</h3>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-600">Click Generate Image to start building your local studio history.</p>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-600">Click Generate Image to start building your API-backed studio history.</p>
               </div>
             ) : (
               <div className="space-y-3">
