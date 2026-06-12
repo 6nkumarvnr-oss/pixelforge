@@ -1,5 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
+import { getAuthenticatedUser } from "../../lib/auth";
+import { addHistoryItemToDatabase } from "../../lib/pixelforge-db";
 import { addHistoryItem, type Generation } from "../../lib/pixelforge-store";
 
 export default defineHandler(async (event) => {
@@ -13,7 +15,8 @@ export default defineHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "imageUrl is required" });
   }
 
-  const item = addHistoryItem(body);
+  const authUser = await getAuthenticatedUser(event);
+  const item = (await addHistoryItemToDatabase(authUser, body)) ?? addHistoryItem({ ...body, userId: authUser?.id });
 
   return {
     ok: true,

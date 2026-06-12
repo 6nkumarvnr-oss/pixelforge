@@ -1,5 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
+import { getAuthenticatedUser } from "../../lib/auth";
+import { createPresetInDatabase } from "../../lib/pixelforge-db";
 import { createPreset, type Preset } from "../../lib/pixelforge-store";
 
 export default defineHandler(async (event) => {
@@ -13,7 +15,8 @@ export default defineHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "prompt is required" });
   }
 
-  const preset = createPreset(body);
+  const authUser = await getAuthenticatedUser(event);
+  const preset = (await createPresetInDatabase(authUser, body)) ?? createPreset({ ...body, userId: authUser?.id });
 
   return {
     ok: true,

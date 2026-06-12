@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlanTier {
+  FREE
+  PRO
+  STUDIO
+}
+
+enum SubscriptionStatus {
+  NONE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+model User {
+  id                   String             @id
+  email                String             @unique
+  credits              Int                @default(25)
+  favorites            Json               @default("[]")
+  plan                 PlanTier           @default(FREE)
+  subscriptionStatus   SubscriptionStatus @default(NONE)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  presets              Preset[]
+  generations          Generation[]
+}
+
+model Preset {
+  id        String   @id @default(cuid())
+  name      String
+  category  String
+  tags      String[] @default([])
+  prompt    String
+  negative  String   @default("")
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([userId])
+}
+
+model Generation {
+  id        String   @id @default(cuid())
+  prompt    String
+  negative  String   @default("")
+  imageUrl  String
+  metadata  Json
+  favorite  Boolean  @default(false)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([favorite])
+}

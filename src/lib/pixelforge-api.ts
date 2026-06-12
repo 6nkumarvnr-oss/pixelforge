@@ -1,3 +1,5 @@
+import { getSupabaseAccessToken } from "@/lib/supabaseClient";
+
 export type ApiPreset = {
   id: string;
   name: string;
@@ -43,7 +45,21 @@ export type ApiAnalytics = {
   modelUsage: Record<string, number>;
   styleUsage: Record<string, number>;
   fallbackActive: boolean;
+  user?: {
+    credits: number;
+    plan: "FREE" | "PRO" | "STUDIO";
+    subscriptionStatus: "NONE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  } | null;
   updatedAt: string;
+};
+
+export type ApiUserProfile = {
+  id: string;
+  email: string;
+  credits: number | null;
+  plan: "FREE" | "PRO" | "STUDIO";
+  subscriptionStatus: "NONE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  favorites?: string[];
 };
 
 export type GenerateRequest = Partial<ApiGenerationMetadata> & {
@@ -53,12 +69,14 @@ export type GenerateRequest = Partial<ApiGenerationMetadata> & {
 };
 
 const requestJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const token = await getSupabaseAccessToken();
   const response = await fetch(path, {
+    ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
-    ...init,
   });
 
   if (!response.ok) {
@@ -84,10 +102,39 @@ export const fetchPixelForgeAnalytics = async () => {
   return data.analytics;
 };
 
+export const fetchPixelForgeUser = async () => {
+  const data = await requestJson<{ ok: boolean; authenticated: boolean; user: ApiUserProfile | null }>("/api/me");
+  return data.user;
+};
+
 export const generatePixelForgeImage = async (input: GenerateRequest) => {
-  const data = await requestJson<{ ok: boolean; generation: ApiGeneration }>("/api/generate", {
+  const data = await requestJson<{ ok: boolean; generation: ApiGeneration; creditsRemaining: number | null }>("/api/generate", {
     method: "POST",
     body: JSON.stringify(input),
   });
   return data.generation;
+};
+
+export const updatePixelForgeFavorite = async (id: string, favorite: boolean) => {
+  const data = await requestJson<{ ok: boolean; item: ApiGeneration | null; fallback?: boolean }>(`/api/history/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ favorite }),
+  });
+  return data.item;
+};
+
+export const createBillingCheckout = async (plan: "PRO" | "STUDIO") => {
+  const data = await requestJson<{ ok: boolean; url: string | null }>("/api/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan }),
+  });
+  return data.url;
+};
+
+export const createBillingPortal = async () => {
+  const data = await requestJson<{ ok: boolean; url: string }>("/api/billing/portal", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  return data.url;
 };

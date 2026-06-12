@@ -42,14 +42,21 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  createBillingCheckout,
+  createBillingPortal,
   fetchPixelForgeAnalytics,
   fetchPixelForgeHistory,
   fetchPixelForgePresets,
+  fetchPixelForgeUser,
   generatePixelForgeImage,
+  updatePixelForgeFavorite,
   type ApiAnalytics,
   type ApiGeneration,
   type ApiPreset,
+  type ApiUserProfile,
 } from "@/lib/pixelforge-api";
+import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
+import type { Session } from "@supabase/supabase-js";
 import { toast } from "sonner";
 
 type Preset = Omit<ApiPreset, "userId"> & {
@@ -297,28 +304,37 @@ const Index = () => {
   const [history, setHistory] = useState<GeneratedImage[]>(() => loadHistory());
   const [presetLibrary, setPresetLibrary] = useState<Preset[]>(presets);
   const [analytics, setAnalytics] = useState<ApiAnalytics | null>(null);
+  const [userProfile, setUserProfile] = useState<ApiUserProfile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loginEmail, setLoginEmail] = useState("");
   const [apiStatus, setApiStatus] = useState<"connecting" | "online" | "fallback">("connecting");
   const [activeFilter, setActiveFilter] = useState("All");
   const [search, setSearch] = useState("");
 
+  const refreshWorkspace = async () => {
+    const [apiPresets, apiHistory, apiAnalytics, apiUser] = await Promise.all([
+      fetchPixelForgePresets(),
+      fetchPixelForgeHistory(),
+      fetchPixelForgeAnalytics(),
+      fetchPixelForgeUser(),
+    ]);
+    setPresetLibrary(apiPresets.map(decoratePreset));
+    if (apiHistory.length > 0) {
+      setHistory(apiHistory.map(mapApiGeneration));
+    }
+    setAnalytics(apiAnalytics);
+    setUserProfile(apiUser);
+    setApiStatus("online");
+  };
+
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([fetchPixelForgePresets(), fetchPixelForgeHistory(), fetchPixelForgeAnalytics()])
-      .then(([apiPresets, apiHistory, apiAnalytics]) => {
-        if (!isMounted) return;
-        setPresetLibrary(apiPresets.map(decoratePreset));
-        if (apiHistory.length > 0) {
-          setHistory(apiHistory.map(mapApiGeneration));
-        }
-        setAnalytics(apiAnalytics);
-        setApiStatus("online");
-      })
-      .catch(() => {
-        if (!isMounted) return;
-        setApiStatus("fallback");
-        toast.warning("Using local fallback mode until the API is available.");
-      });
+    refreshWorkspace().catch(() => {
+      if (!isMounted) return;
+      setApiStatus("fallback");
+      toast.warning("Using local fallback mode until the API is available.");
+    });
 
     return () => {
       isMounted = false;
@@ -326,8 +342,35 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("pixelforge-history", JSON.stringify(history));
-  }, [history]);
+    if (!supabase) return;
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      if (data.session?.user.email) {
+        setLoginEmail(data.session.user.email);
+      }
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      if (nextSession?.user.email) {
+        setLoginEmail(nextSession.user.email);
+      }
+      window.setTimeout(() => {
+        refreshWorkspace().catch(() => setApiStatus("fallback"));
+      }, 0);
+    });
+
+    return () => {
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (apiStatus === "fallback") {
+      localStorage.setItem("pixelforge-history", JSON.stringify(history));
+    }
+  }, [apiStatus, history]);
 
   const qualityScore = useMemo(() => {
     const lengthScore = Math.min(45, prompt.length / 4);
@@ -361,7 +404,9 @@ const Index = () => {
     return matchesFilter && matchesSearch;
   });
   const favorites = history.filter((item) => item.favorite);
-  const creditsRemaining = Math.max(0, 248 - (analytics?.totals.creditsUsed ?? history.length));
+  const creditsRemaining = userProfile?.credits ?? analytics?.user?.credits ?? Math.max(0, 25 - (analytics?.totals.creditsUsed ?? history.length));
+  const currentPlan = userProfile?.plan ?? analytics?.user?.plan ?? "FREE";
+  const subscriptionStatus = userProfile?.subscriptionStatus ?? analytics?.user?.subscriptionStatus ?? "NONE";
 
   const applyPreset = (preset: Preset) => {
     setPrompt(preset.prompt);
@@ -385,6 +430,47 @@ const Index = () => {
     setSeed(Math.floor(1000 + Math.random() * 8999));
   };
 
+  const login = async () => {
+    if (!supabase) {
+      toast.error("Supabase Auth is not configured yet.");
+      return;
+    }
+
+    if (!loginEmail.trim()) {
+      toast.error("Enter your email to receive a magic login link.");
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: loginEmail.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success("Magic login link sent. Check your email.");
+  };
+
+  const logout = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setUserProfile(null);
+    setSession(null);
+    toast.success("Logged out of PixelForge.");
+  };
+
+  const openBilling = async (plan: "PRO" | "STUDIO") => {
+    try {
+      const url = currentPlan === "FREE" ? await createBillingCheckout(plan) : await createBillingPortal();
+      if (url) window.location.href = url;
+    } catch {
+      toast.error("Billing is not configured yet.");
+    }
+  };
+
   const generateImage = async () => {
     if (!prompt.trim()) {
       toast.error("Add a prompt before generating.");
@@ -405,12 +491,13 @@ const Index = () => {
         upscale,
         removeBackground,
         colorBoost,
-        provider: "fallback",
+        provider: model.includes("DALL-E") ? "dalle" : model.includes("SDXL") ? "sdxl" : "fallback",
         style: activeFilter === "All" ? "Custom" : activeFilter,
       });
       const generated = mapApiGeneration(generation);
       setHistory((items) => [generated, ...items].slice(0, 18));
       fetchPixelForgeAnalytics().then(setAnalytics).catch(() => undefined);
+      fetchPixelForgeUser().then(setUserProfile).catch(() => undefined);
       setApiStatus("online");
       toast.success("Image generated through the Nitro API");
     } catch {
@@ -449,7 +536,16 @@ const Index = () => {
   };
 
   const toggleFavorite = (id: string) => {
-    setHistory((items) => items.map((item) => (item.id === id ? { ...item, favorite: !item.favorite } : item)));
+    const nextFavorite = !history.find((item) => item.id === id)?.favorite;
+    setHistory((items) => items.map((item) => (item.id === id ? { ...item, favorite: nextFavorite } : item)));
+    updatePixelForgeFavorite(id, nextFavorite)
+      .then((updated) => {
+        if (updated) {
+          setHistory((items) => items.map((item) => (item.id === id ? mapApiGeneration(updated) : item)));
+        }
+        fetchPixelForgeAnalytics().then(setAnalytics).catch(() => undefined);
+      })
+      .catch(() => toast.warning("Favorite saved locally until the database is available."));
   };
 
   const remix = (item: GeneratedImage) => {
@@ -489,18 +585,50 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 rounded-[2rem] border border-white/70 bg-white/70 p-2 shadow-lg shadow-violet-100/70 backdrop-blur sm:grid-cols-4 md:flex md:items-center">
-          {[
-            ["Credits", String(creditsRemaining)],
-            ["Plan", "Free"],
-            ["API", apiStatus],
-            ["Favorites", String(favorites.length)],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-3xl bg-white px-4 py-2 text-center shadow-sm">
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</p>
-              <p className="text-sm font-black capitalize text-slate-900">{value}</p>
-            </div>
-          ))}
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+          <div className="grid grid-cols-2 gap-2 rounded-[2rem] border border-white/70 bg-white/70 p-2 shadow-lg shadow-violet-100/70 backdrop-blur sm:grid-cols-4 md:flex md:items-center">
+            {[
+              ["Credits", String(creditsRemaining)],
+              ["Plan", currentPlan],
+              ["API", apiStatus],
+              ["Favorites", String(favorites.length)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-3xl bg-white px-4 py-2 text-center shadow-sm">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</p>
+                <p className="text-sm font-black capitalize text-slate-900">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-[2rem] border border-white/70 bg-white/70 p-2 shadow-lg shadow-violet-100/70 backdrop-blur">
+            {session ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="rounded-3xl bg-white px-4 py-2 shadow-sm">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Account</p>
+                  <p className="max-w-44 truncate text-sm font-black text-slate-900">{session.user.email}</p>
+                </div>
+                <Button onClick={() => openBilling("PRO")} className="rounded-2xl bg-violet-600 font-black text-white hover:bg-violet-700">
+                  {subscriptionStatus === "ACTIVE" ? "Manage" : "Upgrade"}
+                </Button>
+                <Button onClick={logout} variant="outline" className="rounded-2xl border-violet-100 bg-white font-black text-slate-700 hover:bg-violet-50">
+                  Logout
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={loginEmail}
+                  onChange={(event) => setLoginEmail(event.target.value)}
+                  disabled={!isSupabaseConfigured}
+                  placeholder={isSupabaseConfigured ? "you@example.com" : "Add Supabase env vars"}
+                  className="h-11 rounded-2xl border-violet-100 bg-white font-semibold"
+                />
+                <Button onClick={login} className="h-11 rounded-2xl bg-slate-950 px-5 font-black text-white hover:bg-violet-700">
+                  Login
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
