@@ -6,6 +6,7 @@ import {
   Brush,
   Camera,
   ChevronRight,
+  Compass,
   Cpu,
   Download,
   Eraser,
@@ -407,6 +408,36 @@ const Index = () => {
   const creditsRemaining = userProfile?.credits ?? analytics?.user?.credits ?? Math.max(0, 25 - (analytics?.totals.creditsUsed ?? history.length));
   const currentPlan = userProfile?.plan ?? analytics?.user?.plan ?? "FREE";
   const subscriptionStatus = userProfile?.subscriptionStatus ?? analytics?.user?.subscriptionStatus ?? "NONE";
+  const guideSteps = [
+    {
+      href: "#preset-library",
+      label: "1. Pick a style",
+      copy: "Search categories and load a preset to start fast.",
+      icon: Search,
+      color: "bg-cyan-100 text-cyan-700",
+    },
+    {
+      href: "#prompt-builder",
+      label: "2. Edit the brief",
+      copy: "Adjust positive/negative prompts, model, size, seed, and creativity.",
+      icon: Wand2,
+      color: "bg-violet-100 text-violet-700",
+    },
+    {
+      href: "#live-canvas",
+      label: "3. Generate",
+      copy: "Click Generate Image, then download the preview when you like it.",
+      icon: Sparkles,
+      color: "bg-rose-100 text-rose-700",
+    },
+    {
+      href: "#history-panel",
+      label: "4. Save or remix",
+      copy: "Favorite your best outputs or remix them back into the builder.",
+      icon: Heart,
+      color: "bg-amber-100 text-amber-700",
+    },
+  ];
 
   const applyPreset = (preset: Preset) => {
     setPrompt(preset.prompt);
@@ -632,8 +663,44 @@ const Index = () => {
         </div>
       </header>
 
+      <section aria-label="How to use PixelForge" className="mx-auto w-full max-w-[1560px] px-4 pb-4 sm:px-6 lg:px-8">
+        <Card className="overflow-hidden rounded-[2rem] border-white/80 bg-white/80 p-4 shadow-2xl shadow-violet-200/35 backdrop-blur-xl sm:p-5">
+          <div className="grid gap-4 xl:grid-cols-[280px_1fr] xl:items-center">
+            <div className="rounded-[1.5rem] bg-slate-950 p-5 text-white">
+              <div className="mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-cyan-300 text-slate-950">
+                <Compass className="h-5 w-5" />
+              </div>
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-cyan-200">Quick navigation</p>
+              <h2 className="mt-2 text-2xl font-black tracking-tight">How to use this app</h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-300">
+                Follow these steps from left to right: choose a preset, refine the brief, generate, then save or remix.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {guideSteps.map((step) => {
+                const Icon = step.icon;
+                return (
+                  <a
+                    key={step.href}
+                    href={step.href}
+                    className="group rounded-[1.5rem] border border-violet-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-violet-200 hover:shadow-xl hover:shadow-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2"
+                  >
+                    <div className={`mb-3 grid h-11 w-11 place-items-center rounded-2xl ${step.color}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="font-black text-slate-950 group-hover:text-violet-700">{step.label}</h3>
+                    <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">{step.copy}</p>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+      </section>
+
       <section className="mx-auto grid w-full max-w-[1560px] gap-4 px-4 pb-8 sm:px-6 lg:grid-cols-[310px_minmax(0,1fr)_360px] lg:px-8">
-        <aside className="rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
+        <aside id="preset-library" className="scroll-mt-5 rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.25em] text-violet-600">Discover</p>
@@ -702,7 +769,7 @@ const Index = () => {
           </ScrollArea>
         </aside>
 
-        <div className="space-y-4">
+        <div id="prompt-builder" className="scroll-mt-5 space-y-4">
           <Card className="overflow-hidden rounded-[2rem] border-white/80 bg-white/80 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl sm:p-5">
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
               <div className="space-y-4">
@@ -784,7 +851,7 @@ const Index = () => {
                 </div>
               </div>
 
-              <div className="rounded-[1.75rem] border border-white/80 bg-[#120F2A] p-4 text-white shadow-xl shadow-violet-200/50">
+              <div id="live-canvas" className="scroll-mt-5 rounded-[1.75rem] border border-white/80 bg-[#120F2A] p-4 text-white shadow-xl shadow-violet-200/50">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-200">Live Canvas</p>
@@ -843,7 +910,7 @@ const Index = () => {
           </div>
         </div>
 
-        <aside className="rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
+        <aside id="history-panel" className="scroll-mt-5 rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.25em] text-violet-600">Output</p>
