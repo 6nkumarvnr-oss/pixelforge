@@ -46,9 +46,11 @@ export type ApiAnalytics = {
   styleUsage: Record<string, number>;
   fallbackActive: boolean;
   user?: {
-    credits: number;
+    credits: number | null;
     plan: "FREE" | "PRO" | "STUDIO";
     subscriptionStatus: "NONE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+    role?: "SUPER_ADMIN" | "USER";
+    unlimitedCredits?: boolean;
   } | null;
   updatedAt: string;
 };
@@ -60,6 +62,26 @@ export type ApiUserProfile = {
   plan: "FREE" | "PRO" | "STUDIO";
   subscriptionStatus: "NONE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
   favorites?: string[];
+  role?: "SUPER_ADMIN" | "USER";
+  unlimitedCredits?: boolean;
+};
+
+export type ApiAdminPaymentSettings = {
+  supportEmail: string;
+  businessName: string;
+  currency: string;
+  proPlanLabel: string;
+  studioPlanLabel: string;
+  paymentNote: string;
+  bankTransferNote: string;
+  updatedAt: string;
+};
+
+export type ApiAdminPaymentStatus = {
+  secretKeyConfigured: boolean;
+  proPriceConfigured: boolean;
+  studioPriceConfigured: boolean;
+  webhookSecretConfigured: boolean;
 };
 
 export type GenerateRequest = Partial<ApiGenerationMetadata> & {
@@ -137,4 +159,21 @@ export const createBillingPortal = async () => {
     body: JSON.stringify({}),
   });
   return data.url;
+};
+
+export const fetchAdminPaymentSettings = async () => {
+  const data = await requestJson<{
+    ok: boolean;
+    settings: ApiAdminPaymentSettings | null;
+    stripe: ApiAdminPaymentStatus;
+  }>("/api/admin/payment-settings");
+  return data;
+};
+
+export const updateAdminPaymentSettings = async (settings: Partial<ApiAdminPaymentSettings>) => {
+  const data = await requestJson<{ ok: boolean; settings: ApiAdminPaymentSettings | null }>("/api/admin/payment-settings", {
+    method: "PATCH",
+    body: JSON.stringify(settings),
+  });
+  return data.settings;
 };

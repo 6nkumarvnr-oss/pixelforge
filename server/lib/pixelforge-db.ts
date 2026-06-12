@@ -1,14 +1,28 @@
 import { getPrisma } from "./prisma";
+import { isSuperAdmin } from "./admin";
 import { listPresets as listFallbackPresets, type Generation, type GenerateInput, type Preset } from "./pixelforge-store";
 import type { AuthUser } from "./auth";
 
 export type UserProfile = {
   id: string;
   email: string;
-  credits: number;
+  credits: number | null;
   plan: "FREE" | "PRO" | "STUDIO";
   subscriptionStatus: "NONE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
   favorites: string[];
+  role: "SUPER_ADMIN" | "USER";
+  unlimitedCredits: boolean;
+};
+
+export type AdminPaymentSettings = {
+  supportEmail: string;
+  businessName: string;
+  currency: string;
+  proPlanLabel: string;
+  studioPlanLabel: string;
+  paymentNote: string;
+  bankTransferNote: string;
+  updatedAt: string;
 };
 
 const toStringArray = (value: unknown): string[] => {
@@ -42,13 +56,17 @@ export const getUserProfile = async (authUser: AuthUser | null): Promise<UserPro
   const user = await ensureUser(authUser);
   if (!user) return null;
 
+  const superAdmin = isSuperAdmin(authUser);
+
   return {
     id: user.id,
     email: user.email,
-    credits: user.credits,
-    plan: user.plan,
-    subscriptionStatus: user.subscriptionStatus,
+    credits: superAdmin ? null : user.credits,
+    plan: superAdmin ? "STUDIO" : user.plan,
+    subscriptionStatus: superAdmin ? "ACTIVE" : user.subscriptionStatus,
     favorites: toStringArray(user.favorites),
+    role: superAdmin ? "SUPER_ADMIN" : "USER",
+    unlimitedCredits: superAdmin,
   };
 };
 
@@ -108,18 +126,19 @@ export const createPresetInDatabase = async (authUser: AuthUser | null, input: P
 
 export const consumeGenerationCredit = async (authUser: AuthUser | null) => {
   const prisma = getPrisma() as any;
-  if (!prisma || !authUser) return { allowed: true, user: null };
+  if (!prisma || !authUser) return { allowed: true, user: null, unlimited: false };
 
   const user = await ensureUser(authUser);
-  if (!user) return { allowed: true, user: null };
-  if (user.credits <= 0) return { allowed: false, user };
+  if (!user) return { allowed: true, user: null, unlimited: false };
+  if (isSuperAdmin(authUser)) return { allowed: true, user, unlimited: true };
+  if (user.credits <= 0) return { allowed: false, user, unlimited: false };
 
   const updated = await prisma.user.update({
     where: { id: user.id },
     data: { credits: { decrement: 1 } },
   });
 
-  return { allowed: true, user: updated };
+  return { allowed: true, user: updated, unlimited: false };
 };
 
 export const saveGenerationToDatabase = async (authUser: AuthUser | null, generation: Generation) => {
@@ -276,13 +295,77 @@ export const getAnalyticsFromDatabase = async (authUser: AuthUser | null) => {
     fallbackActive: false,
     user: user
       ? {
-          credits: user.credits,
-          plan: user.plan,
-          subscriptionStatus: user.subscriptionStatus,
+          credits: isSuperAdmin(authUser) ? null : user.credits,
+          plan: isSuperAdmin(authUser) ? "STUDIO" : user.plan,
+          subscriptionStatus: isSuperAdmin(authUser) ? "ACTIVE" : user.subscriptionStatus,
+          role: isSuperAdmin(authUser) ? "SUPER_ADMIN" : "USER",
+          unlimitedCredits: isSuperAdmin(authUser),
         }
       : null,
     updatedAt: new Date().toISOString(),
   };
+};
+
+export const getAdminPaymentSettings = async (): Promise<AdminPaymentSettings | null> => {
+  const prisma = getPrisma() as any;
+  if (!prisma) return null;
+
+  const rows = await prisma.$queryRaw<Array<{
+    support_email: string;
+    business_name: string;
+    currency: string;
+    pro_plan_label: string;
+    studio_plan_label: string;
+    payment_note: string;
+    bank_transfer_note: string;
+    updated_at: Date;
+  }>>`SELECT support_email, business_name, currency, pro_plan_label, studio_plan_label, payment_note, bank_transfer_note, updated_at FROM public.admin_payment_settings WHERE id = 'payment' LIMIT 1`;
+
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    supportEmail: row.support_email,
+    businessName: row.business_name,
+    currency: row.currency,
+    proPlanLabel: row.pro_plan_label,
+    studioPlanLabel: row.studio_plan_label,
+    paymentNote: row.payment_note,
+    bankTransferNote: row.bank_transfer_note,
+    updatedAt: row.updated_at.toISOString(),
+  };
+};
+
+export const updateAdminPaymentSettings = async (input: Partial<AdminPaymentSettings>): Promise<AdminPaymentSettings | null> => {
+  const prisma = getPrisma() as any;
+  if (!prisma) return null;
+
+  await prisma.$executeRaw`
+    INSERT INTO public.admin_payment_settings (
+      id, support_email, business_name, currency, pro_plan_label, studio_plan_label, payment_note, bank_transfer_note, updated_at
+    ) VALUES (
+      'payment',
+      ${String(input.supportEmail ?? "6nkumar.vnr@gmail.com")},
+      ${String(input.businessName ?? "PixelForge Studio")},
+      ${String(input.currency ?? "USD")},
+      ${String(input.proPlanLabel ?? "Pro Creator")},
+      ${String(input.studioPlanLabel ?? "Studio Team")},
+      ${String(input.paymentNote ?? "Stripe Checkout handles card payments securely. Bank payout details should be managed inside the Stripe dashboard.")},
+      ${String(input.bankTransferNote ?? "For manual bank transfer or payout changes, verify ownership and update bank details only inside Stripe Dashboard payouts settings.")},
+      NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      support_email = EXCLUDED.support_email,
+      business_name = EXCLUDED.business_name,
+      currency = EXCLUDED.currency,
+      pro_plan_label = EXCLUDED.pro_plan_label,
+      studio_plan_label = EXCLUDED.studio_plan_label,
+      payment_note = EXCLUDED.payment_note,
+      bank_transfer_note = EXCLUDED.bank_transfer_note,
+      updated_at = NOW()
+  `;
+
+  return getAdminPaymentSettings();
 };
 
 export const getStripeCustomerId = async (authUser: AuthUser | null) => {

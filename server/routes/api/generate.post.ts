@@ -27,7 +27,7 @@ export default defineHandler(async (event) => {
   return {
     ok: true,
     provider: finalGeneration.metadata.provider,
-    creditsRemaining: creditResult.user?.credits ?? null,
+    creditsRemaining: creditResult.unlimited ? null : creditResult.user?.credits ?? null,
     generation: finalGeneration,
   };
 });
