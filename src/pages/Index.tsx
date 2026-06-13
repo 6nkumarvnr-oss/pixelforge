@@ -101,8 +101,8 @@ const Index = () => {
   const [hasGenerated, setHasGenerated] = useState(false);
   const isSuperAdmin =
     userProfile?.role === "SUPER_ADMIN" || userProfile?.unlimitedCredits || session?.user.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
-  const isFallback = apiStatus === "fallback";
-  const modeLabel = apiStatus === "connecting" ? "Connecting" : isFallback ? "Demo" : "Online";
+  const isFallback = apiStatus === "fallback" || analytics?.fallbackActive === true;
+  const modeLabel = apiStatus === "connecting" ? "Connecting" : isFallback ? "Demo / Fallback" : "Online";
 
   const refreshWorkspace = async () => {
     const [apiPresets, apiHistory, apiAnalytics, apiUser] = await Promise.all([
@@ -117,7 +117,7 @@ const Index = () => {
     }
     setAnalytics(apiAnalytics);
     setUserProfile(apiUser);
-    setApiStatus("online");
+    setApiStatus(apiAnalytics.fallbackActive ? "fallback" : "online");
   };
 
   useEffect(() => {
@@ -520,7 +520,7 @@ const Index = () => {
 
         <div id="prompt-builder" className="scroll-mt-5 space-y-4">
           <Card className="overflow-hidden rounded-[2rem] border-white/80 bg-white/80 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl sm:p-5">
-            <div className="grid gap-4 2xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="grid grid-cols-1 gap-4">
               <div className="min-w-0 space-y-4">
                 <div className="rounded-[1.75rem] bg-slate-950 p-5 text-white shadow-xl shadow-slate-300/60">
                   <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
