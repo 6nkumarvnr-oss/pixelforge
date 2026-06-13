@@ -37,7 +37,7 @@ const planCredits = {
 } as const;
 
 export const ensureUser = async (authUser: AuthUser | null) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma || !authUser) return null;
 
   return prisma.user.upsert({
@@ -71,7 +71,7 @@ export const getUserProfile = async (authUser: AuthUser | null): Promise<UserPro
 };
 
 export const listPresetsFromDatabase = async (authUser: AuthUser | null, category?: string): Promise<Preset[] | null> => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   const user = await ensureUser(authUser);
@@ -84,7 +84,7 @@ export const listPresetsFromDatabase = async (authUser: AuthUser | null, categor
   });
 
   const fallbackPresets = listFallbackPresets(category).map((preset) => ({ ...preset, userId: null }));
-  const dbPresets = customPresets.map((preset: any) => ({
+  const dbPresets = customPresets.map((preset) => ({
     id: preset.id,
     name: preset.name,
     category: preset.category,
@@ -98,7 +98,7 @@ export const listPresetsFromDatabase = async (authUser: AuthUser | null, categor
 };
 
 export const createPresetInDatabase = async (authUser: AuthUser | null, input: Partial<Preset>): Promise<Preset | null> => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   const user = await ensureUser(authUser);
@@ -125,7 +125,7 @@ export const createPresetInDatabase = async (authUser: AuthUser | null, input: P
 };
 
 export const consumeGenerationCredit = async (authUser: AuthUser | null) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma || !authUser) return { allowed: true, user: null, unlimited: false };
 
   const user = await ensureUser(authUser);
@@ -142,7 +142,7 @@ export const consumeGenerationCredit = async (authUser: AuthUser | null) => {
 };
 
 export const saveGenerationToDatabase = async (authUser: AuthUser | null, generation: Generation) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   const user = await ensureUser(authUser);
@@ -174,7 +174,7 @@ export const listHistoryFromDatabase = async ({
   limit?: number;
   favoritesOnly?: boolean;
 }): Promise<Generation[] | null> => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   const user = await ensureUser(authUser);
@@ -187,7 +187,7 @@ export const listHistoryFromDatabase = async ({
     take: Math.min(Math.max(limit, 1), 50),
   });
 
-  return items.map((item: any) => ({
+  return items.map((item) => ({
     id: item.id,
     prompt: item.prompt,
     negative: item.negative ?? "",
@@ -200,7 +200,7 @@ export const listHistoryFromDatabase = async ({
 };
 
 export const addHistoryItemToDatabase = async (authUser: AuthUser | null, input: Partial<Generation>) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   const user = await ensureUser(authUser);
@@ -228,7 +228,7 @@ export const addHistoryItemToDatabase = async (authUser: AuthUser | null, input:
 };
 
 export const updateGenerationFavorite = async (authUser: AuthUser | null, generationId: string, favorite: boolean) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   const user = await ensureUser(authUser);
@@ -266,7 +266,7 @@ export const updateGenerationFavorite = async (authUser: AuthUser | null, genera
 };
 
 export const getAnalyticsFromDatabase = async (authUser: AuthUser | null) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   const user = await ensureUser(authUser);
@@ -278,13 +278,19 @@ export const getAnalyticsFromDatabase = async (authUser: AuthUser | null) => {
     prisma.generation.findMany({ where, take: 100, orderBy: { createdAt: "desc" } }),
   ]);
 
-  const modelUsage = recent.reduce((usage: Record<string, number>, item: any) => {
-    const model = String(item.metadata?.model ?? "Unknown");
+  const readMetadataLabel = (metadata: unknown, key: "model" | "style", fallback: string) => {
+    if (!metadata || typeof metadata !== "object") return fallback;
+    const value = (metadata as Record<string, unknown>)[key];
+    return typeof value === "string" && value.trim() ? value : fallback;
+  };
+
+  const modelUsage = recent.reduce<Record<string, number>>((usage, item) => {
+    const model = readMetadataLabel(item.metadata, "model", "Unknown");
     usage[model] = (usage[model] ?? 0) + 1;
     return usage;
   }, {});
-  const styleUsage = recent.reduce((usage: Record<string, number>, item: any) => {
-    const style = String(item.metadata?.style ?? "Custom");
+  const styleUsage = recent.reduce<Record<string, number>>((usage, item) => {
+    const style = readMetadataLabel(item.metadata, "style", "Custom");
     usage[style] = (usage[style] ?? 0) + 1;
     return usage;
   }, {});
@@ -313,7 +319,7 @@ export const getAnalyticsFromDatabase = async (authUser: AuthUser | null) => {
 };
 
 export const getAdminPaymentSettings = async (): Promise<AdminPaymentSettings | null> => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   const rows = await prisma.$queryRaw<Array<{
@@ -343,7 +349,7 @@ export const getAdminPaymentSettings = async (): Promise<AdminPaymentSettings | 
 };
 
 export const updateAdminPaymentSettings = async (input: Partial<AdminPaymentSettings>): Promise<AdminPaymentSettings | null> => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma) return null;
 
   await prisma.$executeRaw`
@@ -375,7 +381,7 @@ export const updateAdminPaymentSettings = async (input: Partial<AdminPaymentSett
 };
 
 export const getStripeCustomerId = async (authUser: AuthUser | null) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma || !authUser) return null;
 
   const user = await ensureUser(authUser);
@@ -383,7 +389,7 @@ export const getStripeCustomerId = async (authUser: AuthUser | null) => {
 };
 
 export const setStripeCustomerId = async (authUser: AuthUser | null, stripeCustomerId: string) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma || !authUser) return null;
 
   await ensureUser(authUser);
@@ -406,7 +412,7 @@ export const applyBillingPlan = async ({
   plan: "FREE" | "PRO" | "STUDIO";
   active: boolean;
 }) => {
-  const prisma = getPrisma() as any;
+  const prisma = getPrisma();
   if (!prisma || !email) return null;
 
   const credits = active ? planCredits[plan] : planCredits.FREE;

@@ -1,9 +1,6 @@
 import { createRequire } from "module";
 import { getPixelForgeConfig } from "./config";
-
-type PrismaClientInstance = {
-  [key: string]: unknown;
-};
+import type { PrismaClient as PrismaClientInstance } from "@prisma/client";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -19,7 +16,7 @@ export const getPrisma = () => {
 
   try {
     const { PrismaClient } = require("@prisma/client") as {
-      PrismaClient: new (options?: { log?: string[] }) => PrismaClientInstance;
+      PrismaClient: new (options?: { log?: Array<"query" | "info" | "warn" | "error"> }) => PrismaClientInstance;
     };
 
     globalThis.__pixelforgePrisma ??= new PrismaClient({
