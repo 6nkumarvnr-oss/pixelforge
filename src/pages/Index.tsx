@@ -98,8 +98,11 @@ const Index = () => {
   const [adminPaymentSettings, setAdminPaymentSettings] = useState<ApiAdminPaymentSettings | null>(null);
   const [adminPaymentStatus, setAdminPaymentStatus] = useState<ApiAdminPaymentStatus | null>(null);
   const [isSavingAdminSettings, setIsSavingAdminSettings] = useState(false);
+  const [hasGenerated, setHasGenerated] = useState(false);
   const isSuperAdmin =
     userProfile?.role === "SUPER_ADMIN" || userProfile?.unlimitedCredits || session?.user.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
+  const isFallback = apiStatus === "fallback";
+  const modeLabel = apiStatus === "connecting" ? "Connecting" : isFallback ? "Demo" : "Online";
 
   const refreshWorkspace = async () => {
     const [apiPresets, apiHistory, apiAnalytics, apiUser] = await Promise.all([
@@ -355,6 +358,7 @@ const Index = () => {
       toast.warning("API unavailable, generated with local fallback.");
     } finally {
       setIsGenerating(false);
+      setHasGenerated(true);
     }
   };
 
@@ -404,7 +408,7 @@ const Index = () => {
               <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">PixelForge</h1>
               <Badge className="rounded-full border-0 bg-violet-600 px-3 py-1 text-white hover:bg-violet-600">Beta Studio</Badge>
             </div>
-            <p className="text-sm font-medium text-slate-600">Prompt, generate, refine, favorite, and remix designer-ready visuals.</p>
+            <p className="text-sm font-medium text-slate-600">Build image prompts, generate previews, and remix your best results.</p>
           </div>
         </div>
 
@@ -413,12 +417,14 @@ const Index = () => {
             {[
               ["Credits", creditsRemaining],
               ["Plan", currentPlan],
-              ["API", apiStatus],
+              ["Mode", modeLabel],
               ["Favorites", String(favorites.length)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-3xl bg-white px-4 py-2 text-center shadow-sm">
                 <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">{label}</p>
-                <p className="text-sm font-black capitalize text-slate-900">{value}</p>
+                <p className={`text-sm font-black capitalize ${label === "Mode" && isFallback ? "text-amber-600" : "text-slate-900"}`}>
+                  {value}
+                </p>
               </div>
             ))}
           </div>
@@ -457,17 +463,20 @@ const Index = () => {
                 </Button>
               </div>
             ) : (
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={loginEmail}
-                  onChange={(event) => setLoginEmail(event.target.value)}
-                  disabled={!isSupabaseConfigured}
-                  placeholder={isSupabaseConfigured ? "you@example.com" : "Add Supabase env vars"}
-                  className="h-11 rounded-2xl border-violet-100 bg-white font-semibold"
-                />
-                <Button onClick={login} className="h-11 rounded-2xl bg-slate-950 px-5 font-black text-white hover:bg-violet-700">
-                  Login
-                </Button>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={loginEmail}
+                    onChange={(event) => setLoginEmail(event.target.value)}
+                    disabled={!isSupabaseConfigured}
+                    placeholder={isSupabaseConfigured ? "Enter email for magic link" : "Add Supabase env vars"}
+                    className="h-11 rounded-2xl border-violet-100 bg-white font-semibold"
+                  />
+                  <Button onClick={login} className="h-11 rounded-2xl bg-slate-950 px-5 font-black text-white hover:bg-violet-700">
+                    Login
+                  </Button>
+                </div>
+                <p className="px-1 text-[11px] font-semibold text-slate-500">Login saves history, favorites, and credits.</p>
               </div>
             )}
           </div>
@@ -475,6 +484,16 @@ const Index = () => {
       </header>
 
       <GuideSection />
+
+      {!session && isSupabaseConfigured && (
+        <div className="mx-auto w-full max-w-[1560px] px-4 pb-3 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-2 rounded-[1.25rem] border border-amber-100 bg-amber-50 px-4 py-2.5">
+            <span className="text-sm font-semibold text-amber-800">
+              Guest mode — generations are stored locally. Sign in to save history and favorites reliably.
+            </span>
+          </div>
+        </div>
+      )}
 
       {isSuperAdmin && activePanel === "admin" && (
         <AdminPanel
@@ -596,7 +615,23 @@ const Index = () => {
                     <div className="absolute inset-3 grid place-items-center rounded-[1.15rem] bg-slate-950/70 backdrop-blur-sm">
                       <div className="text-center">
                         <Sparkles className="mx-auto mb-3 h-8 w-8 animate-pulse text-cyan-200" />
-                        <p className="text-sm font-black uppercase tracking-[0.22em] text-white">Forging pixels...</p>
+                        <p className="text-sm font-black uppercase tracking-[0.22em] text-white">Generating...</p>
+                      </div>
+                    </div>
+                  )}
+                  {!isGenerating && !hasGenerated && history.length === 0 && (
+                    <div className="absolute inset-3 grid place-items-center rounded-[1.15rem] bg-slate-950/55 backdrop-blur-sm">
+                      <div className="px-4 text-center">
+                        <ImageIcon className="mx-auto mb-3 h-8 w-8 text-slate-300" />
+                        <p className="text-sm font-black text-white">No image generated yet</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-300">Choose a preset or edit the prompt, then click Generate.</p>
+                      </div>
+                    </div>
+                  )}
+                  {!isGenerating && hasGenerated && isFallback && (
+                    <div className="absolute bottom-5 left-5 right-5">
+                      <div className="rounded-full bg-amber-500/90 px-3 py-1.5 text-center text-xs font-black text-white backdrop-blur-sm">
+                        Fallback SVG preview
                       </div>
                     </div>
                   )}
@@ -616,15 +651,20 @@ const Index = () => {
                     <Download className="h-5 w-5" />
                   </Button>
                 </div>
+                {isFallback && (
+                  <p className="mt-2 text-center text-xs font-semibold text-slate-400">
+                    Demo mode — set <span className="font-mono">OPENAI_API_KEY</span> or <span className="font-mono">SDXL_API_URL</span> for real AI images.
+                  </p>
+                )}
               </div>
             </div>
           </Card>
 
           <div className="grid gap-4 md:grid-cols-3">
             {[
-              { icon: ShieldCheck, title: "Content safety", copy: "Prompt guardrails and commercial-ready guidance built into the workflow." },
-              { icon: Share2, title: "Community remix", copy: "Save favorite generations and remix winning prompts back into the builder." },
-              { icon: BadgeCheck, title: "Creator workflow", copy: "Model, sampler, seed, ratio, resolution, and edit toggles in one focused studio." },
+              { icon: ShieldCheck, title: "Prompt guidance", copy: "Positive and negative prompts, quality scoring, and one-click enhancement keep briefs on track." },
+              { icon: Share2, title: "Remix workflow", copy: "Favorite your best outputs and remix any result back into the builder with one click." },
+              { icon: BadgeCheck, title: "Provider options", copy: "Connect OpenAI or SDXL for real AI images. Without a provider key the app runs in demo mode." },
             ].map((feature) => {
               const Icon = feature.icon;
               return (
@@ -643,7 +683,7 @@ const Index = () => {
         <HistoryPanel
           history={history}
           favoritesCount={favorites.length}
-          modelsCount={Object.keys(analytics?.modelUsage ?? {}).length || models.length}
+          isAuthenticated={!!session}
           onToggleFavorite={toggleFavorite}
           onRemix={remix}
         />

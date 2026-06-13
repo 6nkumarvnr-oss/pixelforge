@@ -9,12 +9,12 @@ import type { GeneratedImage } from "@/lib/studio-data";
 type HistoryPanelProps = {
   history: GeneratedImage[];
   favoritesCount: number;
-  modelsCount: number;
+  isAuthenticated: boolean;
   onToggleFavorite: (id: string) => void;
   onRemix: (item: GeneratedImage) => void;
 };
 
-const HistoryPanel = ({ history, favoritesCount, modelsCount, onToggleFavorite, onRemix }: HistoryPanelProps) => (
+const HistoryPanel = ({ history, favoritesCount, isAuthenticated, onToggleFavorite, onRemix }: HistoryPanelProps) => (
   <aside
     id="history-panel"
     className="scroll-mt-5 rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]"
@@ -24,16 +24,19 @@ const HistoryPanel = ({ history, favoritesCount, modelsCount, onToggleFavorite, 
         <p className="text-xs font-black uppercase tracking-[0.25em] text-violet-600">Output</p>
         <h2 className="text-xl font-black">History & Favorites</h2>
       </div>
-      <Badge className="rounded-full border-0 bg-cyan-100 px-3 py-1 font-black text-cyan-700 hover:bg-cyan-100">{history.length} saved</Badge>
+      <Badge className="rounded-full border-0 bg-cyan-100 px-3 py-1 font-black text-cyan-700 hover:bg-cyan-100">
+        {history.length} {isAuthenticated ? "saved" : "local"}
+      </Badge>
     </div>
 
-    <div className="mb-4 overflow-hidden rounded-[1.6rem] border border-white/80 bg-slate-950 p-3 text-white">
-      <div className="relative overflow-hidden rounded-[1.2rem]">
-        <img src="/assets/pixelforge-hero.png" alt="Creative AI canvas illustration" className="h-36 w-full object-cover opacity-90" />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
-        <p className="absolute bottom-3 left-3 right-3 text-sm font-black">Community-ready galleries, remix paths, and creator packs.</p>
+    {!isAuthenticated && (
+      <div className="mb-4 rounded-[1.6rem] border border-amber-100 bg-amber-50 px-4 py-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-600">Guest mode</p>
+        <p className="mt-1 text-sm font-semibold leading-5 text-amber-900">
+          Sign in to save history and favorites across sessions.
+        </p>
       </div>
-    </div>
+    )}
 
     <div className="mb-4 grid grid-cols-2 gap-2">
       <div className="rounded-[1.4rem] bg-white p-4 text-center shadow-sm">
@@ -41,8 +44,8 @@ const HistoryPanel = ({ history, favoritesCount, modelsCount, onToggleFavorite, 
         <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Favorites</p>
       </div>
       <div className="rounded-[1.4rem] bg-white p-4 text-center shadow-sm">
-        <p className="text-2xl font-black text-cyan-700">{modelsCount}</p>
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Models</p>
+        <p className="text-2xl font-black text-cyan-700">{history.length}</p>
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Generated</p>
       </div>
     </div>
 
@@ -52,8 +55,12 @@ const HistoryPanel = ({ history, favoritesCount, modelsCount, onToggleFavorite, 
       {history.length === 0 ? (
         <div className="rounded-[1.75rem] border border-dashed border-violet-200 bg-white/70 p-6 text-center">
           <ImageIcon className="mx-auto mb-3 h-10 w-10 text-violet-400" />
-          <h3 className="font-black text-slate-950">No generated images yet</h3>
-          <p className="mt-2 text-sm font-medium leading-6 text-slate-600">Click Generate Image to start building your API-backed studio history.</p>
+          <h3 className="font-black text-slate-950">No saved generations yet</h3>
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+            {isAuthenticated
+              ? "Choose a preset, edit your prompt, then click Generate Image."
+              : "Generate an image below. Sign in to persist history across sessions."}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
