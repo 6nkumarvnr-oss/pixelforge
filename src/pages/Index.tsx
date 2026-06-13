@@ -520,8 +520,8 @@ const Index = () => {
 
         <div id="prompt-builder" className="scroll-mt-5 space-y-4">
           <Card className="overflow-hidden rounded-[2rem] border-white/80 bg-white/80 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl sm:p-5">
-            <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="space-y-4">
+            <div className="grid gap-4 2xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="min-w-0 space-y-4">
                 <div className="rounded-[1.75rem] bg-slate-950 p-5 text-white shadow-xl shadow-slate-300/60">
                   <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -600,7 +600,7 @@ const Index = () => {
                 </div>
               </div>
 
-              <div id="live-canvas" className="scroll-mt-5 rounded-[1.75rem] border border-white/80 bg-[#120F2A] p-4 text-white shadow-xl shadow-violet-200/50">
+              <div id="live-canvas" className="min-w-0 scroll-mt-5 rounded-[1.75rem] border border-white/80 bg-[#120F2A] p-4 text-white shadow-xl shadow-violet-200/50">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-200">Live Canvas</p>
