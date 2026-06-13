@@ -213,6 +213,8 @@ const Index = () => {
     return matchesFilter && matchesSearch;
   });
   const favorites = history.filter((item) => item.favorite);
+  const latestGeneration = history[0];
+  const previewImageUrl = latestGeneration?.url || currentPreview || "/assets/pixelforge-hero.png";
   const creditsRemaining = isSuperAdmin
     ? "Unlimited"
     : String(userProfile?.credits ?? analytics?.user?.credits ?? Math.max(0, 25 - (analytics?.totals.creditsUsed ?? history.length)));
@@ -305,7 +307,7 @@ const Index = () => {
 
     setIsGenerating(true);
     try {
-      const generation = await generatePixelForgeImage({
+      const { generation, provider } = await generatePixelForgeImage({
         prompt,
         negative,
         model,
@@ -324,8 +326,8 @@ const Index = () => {
       setHistory((items) => [generated, ...items].slice(0, 18));
       fetchPixelForgeAnalytics().then(setAnalytics).catch(() => undefined);
       fetchPixelForgeUser().then(setUserProfile).catch(() => undefined);
-      setApiStatus("online");
-      toast.success("Image generated through the Nitro API");
+      setApiStatus(provider === "fallback" ? "fallback" : "online");
+      toast.success(provider === "fallback" ? "Demo image generated in fallback mode" : "AI image generated successfully");
     } catch {
       const url = makeGeneratedArt({
         prompt,
@@ -387,10 +389,32 @@ const Index = () => {
   };
 
   const downloadCurrent = () => {
+    if (!latestGeneration) {
+      toast.info("Generate an image before downloading.");
+      return;
+    }
+
+    const extension = latestGeneration.url.startsWith("data:image/svg+xml") ? "svg" : latestGeneration.url.includes("image/png") ? "png" : "png";
     const link = document.createElement("a");
-    link.href = currentPreview;
-    link.download = `pixelforge-${seed}.svg`;
+    link.href = latestGeneration.url;
+    link.download = `pixelforge-${latestGeneration.seed}.${extension}`;
     link.click();
+  };
+
+  const shareGeneration = async (item: GeneratedImage) => {
+    const text = `PixelForge generation\nPrompt: ${item.prompt}\nStyle: ${item.style}\nModel: ${item.model}\nAspect: ${item.aspect}\nSeed: ${item.seed}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "PixelForge generation", text });
+      } else {
+        await navigator.clipboard.writeText(text);
+        toast.success("Generation details copied to clipboard.");
+      }
+    } catch {
+      await navigator.clipboard.writeText(text);
+      toast.success("Generation details copied to clipboard.");
+    }
   };
 
   return (
@@ -610,7 +634,7 @@ const Index = () => {
                 </div>
 
                 <div className="relative overflow-hidden rounded-[1.5rem] border border-white/15 bg-white/5 p-3">
-                  <img src={history[0]?.url || currentPreview || "/assets/pixelforge-hero.png"} alt="Generated PixelForge preview" className="aspect-square w-full rounded-[1.15rem] object-cover shadow-2xl" />
+                  <img src={previewImageUrl} alt="Generated PixelForge preview" className="aspect-square w-full rounded-[1.15rem] object-cover shadow-2xl" />
                   {isGenerating && (
                     <div className="absolute inset-3 grid place-items-center rounded-[1.15rem] bg-slate-950/70 backdrop-blur-sm">
                       <div className="text-center">
@@ -647,7 +671,13 @@ const Index = () => {
                   <Button onClick={generateImage} disabled={isGenerating} className="h-14 rounded-2xl bg-violet-500 text-base font-black text-white hover:bg-violet-400">
                     <Sparkles className="mr-2 h-5 w-5" /> {isGenerating ? "Generating..." : "Generate Image"}
                   </Button>
-                  <Button onClick={downloadCurrent} variant="outline" className="h-14 rounded-2xl border-white/15 bg-white/10 px-5 font-black text-white hover:bg-white/20 hover:text-white">
+                  <Button
+                    onClick={downloadCurrent}
+                    disabled={!latestGeneration}
+                    variant="outline"
+                    className="h-14 rounded-2xl border-white/15 bg-white/10 px-5 font-black text-white hover:bg-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Download latest PixelForge generation"
+                  >
                     <Download className="h-5 w-5" />
                   </Button>
                 </div>
@@ -686,6 +716,7 @@ const Index = () => {
           isAuthenticated={!!session}
           onToggleFavorite={toggleFavorite}
           onRemix={remix}
+          onShare={shareGeneration}
         />
       </section>
     </main>

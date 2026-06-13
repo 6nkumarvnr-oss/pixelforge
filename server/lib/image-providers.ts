@@ -94,7 +94,7 @@ const generateWithSdxl = async (input: GenerateInput) => {
   return imageUrl ? makeRealGeneration({ input, imageUrl, provider: "sdxl" }) : null;
 };
 
-export const generateImageWithProvider = async (input: GenerateInput) => {
+export const generateImageWithProvider = async (input: GenerateInput, options: { persistFallback?: boolean } = {}) => {
   const provider = input.provider;
 
   if (provider === "dalle") {
@@ -107,5 +107,5 @@ export const generateImageWithProvider = async (input: GenerateInput) => {
     if (generation) return generation;
   }
 
-  return createGeneration({ ...input, provider: "fallback" });
+  return createGeneration({ ...input, provider: "fallback" }, { persist: options.persistFallback ?? true });
 };

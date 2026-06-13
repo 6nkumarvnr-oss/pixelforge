@@ -16,7 +16,16 @@ export default defineHandler(async (event) => {
   }
 
   const authUser = await getAuthenticatedUser(event);
-  const item = (await addHistoryItemToDatabase(authUser, body)) ?? addHistoryItem({ ...body, userId: authUser?.id });
+
+  if (!authUser) {
+    return {
+      ok: true,
+      item: null,
+      fallback: true,
+    };
+  }
+
+  const item = (await addHistoryItemToDatabase(authUser, body)) ?? addHistoryItem({ ...body, userId: authUser.id });
 
   return {
     ok: true,

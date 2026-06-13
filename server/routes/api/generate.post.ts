@@ -20,9 +20,12 @@ export default defineHandler(async (event) => {
     throw createError({ statusCode: 402, statusMessage: "No generation credits remaining" });
   }
 
-  const generation = await generateImageWithProvider({ ...body, prompt, userId: authUser?.id });
-  const databaseGeneration = await saveGenerationToDatabase(authUser, generation);
-  const finalGeneration = databaseGeneration ?? (generation.metadata.provider === "fallback" ? generation : addHistoryItem(generation));
+  const generation = await generateImageWithProvider(
+    { ...body, prompt, userId: authUser?.id },
+    { persistFallback: Boolean(authUser) },
+  );
+  const databaseGeneration = authUser ? await saveGenerationToDatabase(authUser, generation) : null;
+  const finalGeneration = authUser ? databaseGeneration ?? addHistoryItem(generation) : generation;
 
   return {
     ok: true,

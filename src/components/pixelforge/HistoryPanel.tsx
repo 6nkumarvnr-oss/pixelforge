@@ -12,9 +12,10 @@ type HistoryPanelProps = {
   isAuthenticated: boolean;
   onToggleFavorite: (id: string) => void;
   onRemix: (item: GeneratedImage) => void;
+  onShare: (item: GeneratedImage) => void;
 };
 
-const HistoryPanel = ({ history, favoritesCount, isAuthenticated, onToggleFavorite, onRemix }: HistoryPanelProps) => (
+const HistoryPanel = ({ history, favoritesCount, isAuthenticated, onToggleFavorite, onRemix, onShare }: HistoryPanelProps) => (
   <aside
     id="history-panel"
     className="scroll-mt-5 rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-2xl shadow-violet-200/45 backdrop-blur-xl lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]"
@@ -92,7 +93,12 @@ const HistoryPanel = ({ history, favoritesCount, isAuthenticated, onToggleFavori
                 <Button onClick={() => onRemix(item)} className="h-9 flex-1 rounded-2xl bg-slate-950 text-xs font-black text-white hover:bg-violet-700">
                   <RefreshCcw className="mr-1 h-3.5 w-3.5" /> Remix
                 </Button>
-                <Button variant="outline" className="h-9 rounded-2xl border-violet-100 bg-violet-50 px-3 text-xs font-black text-violet-700 hover:bg-violet-100">
+                <Button
+                  onClick={() => onShare(item)}
+                  variant="outline"
+                  className="h-9 rounded-2xl border-violet-100 bg-violet-50 px-3 text-xs font-black text-violet-700 hover:bg-violet-100"
+                  aria-label="Copy PixelForge generation details"
+                >
                   <Share2 className="h-3.5 w-3.5" />
                 </Button>
               </div>

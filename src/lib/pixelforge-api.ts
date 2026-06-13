@@ -130,11 +130,11 @@ export const fetchPixelForgeUser = async () => {
 };
 
 export const generatePixelForgeImage = async (input: GenerateRequest) => {
-  const data = await requestJson<{ ok: boolean; generation: ApiGeneration; creditsRemaining: number | null }>("/api/generate", {
+  const data = await requestJson<{ ok: boolean; generation: ApiGeneration; provider?: GenerateRequest["provider"]; creditsRemaining: number | null }>("/api/generate", {
     method: "POST",
     body: JSON.stringify(input),
   });
-  return data.generation;
+  return { generation: data.generation, provider: data.provider ?? data.generation.metadata.provider };
 };
 
 export const updatePixelForgeFavorite = async (id: string, favorite: boolean) => {

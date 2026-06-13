@@ -12,6 +12,15 @@ export default defineHandler(async (event) => {
   }
 
   const authUser = await getAuthenticatedUser(event);
+
+  if (!authUser) {
+    return {
+      ok: true,
+      item: null,
+      fallback: true,
+    };
+  }
+
   const updated = await updateGenerationFavorite(authUser, id, Boolean(body.favorite));
 
   if (!updated) {

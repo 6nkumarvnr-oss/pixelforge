@@ -9,6 +9,15 @@ export default defineHandler(async (event) => {
   const limit = Number(query.limit ?? 20);
   const favoritesOnly = query.favorites === "true";
   const authUser = await getAuthenticatedUser(event);
+
+  if (!authUser) {
+    return {
+      ok: true,
+      count: 0,
+      history: [],
+    };
+  }
+
   const history = (await listHistoryFromDatabase({ authUser, limit, favoritesOnly })) ?? listHistory({ limit, favoritesOnly });
 
   return {

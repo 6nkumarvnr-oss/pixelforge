@@ -183,7 +183,7 @@ export const createPreset = (input: Partial<Preset>) => {
   return preset;
 };
 
-export const createGeneration = (input: GenerateInput) => {
+export const createGeneration = (input: GenerateInput, options: { persist?: boolean } = {}) => {
   const prompt = String(input.prompt ?? "").trim();
   const negative = String(input.negative ?? "").trim();
   const generationInput = {
@@ -213,8 +213,10 @@ export const createGeneration = (input: GenerateInput) => {
     createdAt: new Date().toISOString(),
   };
 
-  history.unshift(generation);
-  history.splice(50);
+  if (options.persist ?? true) {
+    history.unshift(generation);
+    history.splice(50);
+  }
   return generation;
 };
 
