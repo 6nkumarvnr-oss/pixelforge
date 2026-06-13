@@ -36,6 +36,7 @@ import AdminPanel from "@/components/pixelforge/AdminPanel";
 import GuideSection from "@/components/pixelforge/GuideSection";
 import HistoryPanel from "@/components/pixelforge/HistoryPanel";
 import PresetLibrary from "@/components/pixelforge/PresetLibrary";
+import ProductionStudioPanel from "@/components/pixelforge/ProductionStudioPanel";
 import { makeGeneratedArt } from "@/lib/fallback-art";
 import {
   aspects,
@@ -66,6 +67,7 @@ import {
   type ApiAnalytics,
   type ApiUserProfile,
 } from "@/lib/pixelforge-api";
+import { fetchStudioWorkspace, type StudioWorkspace } from "@/lib/production-studio";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import type { Session } from "@supabase/supabase-js";
 import { toast } from "sonner";
@@ -88,6 +90,7 @@ const Index = () => {
   const [history, setHistory] = useState<GeneratedImage[]>(() => loadStoredHistory());
   const [presetLibrary, setPresetLibrary] = useState<Preset[]>(builtinPresets);
   const [analytics, setAnalytics] = useState<ApiAnalytics | null>(null);
+  const [studioWorkspace, setStudioWorkspace] = useState<StudioWorkspace | null>(null);
   const [userProfile, setUserProfile] = useState<ApiUserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loginEmail, setLoginEmail] = useState("");
@@ -105,17 +108,19 @@ const Index = () => {
   const modeLabel = apiStatus === "connecting" ? "Connecting" : isFallback ? "Demo / Fallback" : "Online";
 
   const refreshWorkspace = async () => {
-    const [apiPresets, apiHistory, apiAnalytics, apiUser] = await Promise.all([
+    const [apiPresets, apiHistory, apiAnalytics, apiUser, apiStudioWorkspace] = await Promise.all([
       fetchPixelForgePresets(),
       fetchPixelForgeHistory(),
       fetchPixelForgeAnalytics(),
       fetchPixelForgeUser(),
+      fetchStudioWorkspace(),
     ]);
     setPresetLibrary(apiPresets.map(decoratePreset));
     if (apiHistory.length > 0) {
       setHistory(apiHistory.map(mapApiGeneration));
     }
     setAnalytics(apiAnalytics);
+    setStudioWorkspace(apiStudioWorkspace);
     setUserProfile(apiUser);
     setApiStatus(apiAnalytics.fallbackActive ? "fallback" : "online");
   };
@@ -518,6 +523,8 @@ const Index = () => {
           </div>
         </div>
       )}
+
+      {activePanel === "studio" && <ProductionStudioPanel workspace={studioWorkspace} />}
 
       {isSuperAdmin && activePanel === "admin" && (
         <AdminPanel

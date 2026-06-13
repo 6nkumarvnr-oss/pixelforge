@@ -90,7 +90,7 @@ export type GenerateRequest = Partial<ApiGenerationMetadata> & {
   userId?: string;
 };
 
-const requestJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
+export const requestJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const token = await getSupabaseAccessToken();
   const response = await fetch(path, {
     ...init,
