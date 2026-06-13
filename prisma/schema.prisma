@@ -7,18 +7,23 @@ datasource db {
 }
 
 model User {
-  id                   String       @id
-  email                String       @unique
-  credits              Int          @default(25)
-  favorites            Json         @default("[]")
-  plan                 String       @default("FREE")
-  subscriptionStatus   String       @default("NONE") @map("subscription_status")
-  stripeCustomerId     String?      @unique @map("stripe_customer_id")
-  stripeSubscriptionId String?      @unique @map("stripe_subscription_id")
-  createdAt            DateTime     @default(now()) @map("created_at")
-  updatedAt            DateTime     @updatedAt @map("updated_at")
+  id                   String          @id
+  email                String          @unique
+  credits              Int             @default(25)
+  favorites            Json            @default("[]")
+  plan                 String          @default("FREE")
+  subscriptionStatus   String          @default("NONE") @map("subscription_status")
+  stripeCustomerId     String?         @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?         @unique @map("stripe_subscription_id")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
   presets              Preset[]
   generations          Generation[]
+  projects             Project[]
+  brandKits            BrandKit[]
+  briefs               CreativeBrief[]
+  assets               Asset[]
+  exportJobs           ExportJob[]
 
   @@map("users")
 }
@@ -41,18 +46,127 @@ model Preset {
 }
 
 model Generation {
-  id        String   @id @default(dbgenerated("gen_random_uuid()::text"))
-  prompt    String
-  negative  String   @default("")
-  imageUrl  String   @map("image_url")
-  metadata  Json
-  favorite  Boolean  @default(false)
-  userId    String?  @map("user_id")
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            String         @id @default(dbgenerated("gen_random_uuid()::text"))
+  prompt        String
+  negative      String         @default("")
+  imageUrl      String         @map("image_url")
+  metadata      Json           @default("{}")
+  favorite      Boolean        @default(false)
+  userId        String?        @map("user_id")
+  user          User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId     String?        @map("project_id")
+  project       Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  briefId       String?        @map("brief_id")
+  brief         CreativeBrief? @relation(fields: [briefId], references: [id], onDelete: SetNull)
+  brandKitId    String?        @map("brand_kit_id")
+  brandKit      BrandKit?      @relation(fields: [brandKitId], references: [id], onDelete: SetNull)
+  parentId      String?        @map("parent_id")
+  parent        Generation?    @relation("GenerationVersions", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Generation[]   @relation("GenerationVersions")
+  versionNumber Int            @default(1) @map("version_number")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  assets        Asset[]
+  exportJobs    ExportJob[]
 
   @@index([userId, createdAt], map: "generations_user_id_created_at_idx")
   @@index([favorite], map: "generations_favorite_idx")
+  @@index([projectId], map: "generations_project_id_idx")
+  @@index([briefId], map: "generations_brief_id_idx")
+  @@index([brandKitId], map: "generations_brand_kit_id_idx")
+  @@index([parentId], map: "generations_parent_id_idx")
   @@map("generations")
+}
+
+model Project {
+  id          String          @id @default(dbgenerated("gen_random_uuid()::text"))
+  name        String
+  description String?
+  userId      String          @map("user_id")
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  generations Generation[]
+  briefs      CreativeBrief[]
+  assets      Asset[]
+  exportJobs  ExportJob[]
+
+  @@index([userId], map: "projects_user_id_idx")
+  @@map("projects")
+}
+
+model BrandKit {
+  id          String       @id @default(dbgenerated("gen_random_uuid()::text"))
+  name        String
+  colors      Json         @default("[]")
+  fonts       Json         @default("[]")
+  logoUrl     String?      @map("logo_url")
+  userId      String       @map("user_id")
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  generations Generation[]
+
+  @@index([userId], map: "brand_kits_user_id_idx")
+  @@map("brand_kits")
+}
+
+model CreativeBrief {
+  id          String       @id @default(dbgenerated("gen_random_uuid()::text"))
+  title       String
+  description String?
+  projectId   String?      @map("project_id")
+  project     Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String       @map("user_id")
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  generations Generation[]
+
+  @@index([userId], map: "creative_briefs_user_id_idx")
+  @@index([projectId], map: "creative_briefs_project_id_idx")
+  @@map("creative_briefs")
+}
+
+model Asset {
+  id           String      @id @default(dbgenerated("gen_random_uuid()::text"))
+  name         String
+  url          String
+  type         String
+  metadata     Json        @default("{}")
+  projectId    String?     @map("project_id")
+  project      Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  generationId String?     @map("generation_id")
+  generation   Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  userId       String      @map("user_id")
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId], map: "assets_user_id_idx")
+  @@index([projectId], map: "assets_project_id_idx")
+  @@index([generationId], map: "assets_generation_id_idx")
+  @@map("assets")
+}
+
+model ExportJob {
+  id           String      @id @default(dbgenerated("gen_random_uuid()::text"))
+  status       String      @default("PENDING")
+  format       String
+  outputUrl    String?     @map("output_url")
+  error        String?
+  generationId String?     @map("generation_id")
+  generation   Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  projectId    String?     @map("project_id")
+  project      Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  userId       String      @map("user_id")
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId], map: "export_jobs_user_id_idx")
+  @@index([generationId], map: "export_jobs_generation_id_idx")
+  @@index([projectId], map: "export_jobs_project_id_idx")
+  @@index([status], map: "export_jobs_status_idx")
+  @@map("export_jobs")
 }
