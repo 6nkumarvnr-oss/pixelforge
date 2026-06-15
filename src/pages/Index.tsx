@@ -52,18 +52,24 @@ import {
   type Preset,
 } from "@/lib/studio-data";
 import {
+  approveManualPayment,
   createBillingCheckout,
   createBillingPortal,
+  deactivateManualUser,
+  extendManualSubscription,
   fetchAdminPaymentSettings,
+  fetchPendingManualPayments,
   fetchPixelForgeAnalytics,
   fetchPixelForgeHistory,
   fetchPixelForgePresets,
   fetchPixelForgeUser,
   generatePixelForgeImage,
+  rejectManualPayment,
   updateAdminPaymentSettings,
   updatePixelForgeFavorite,
   type ApiAdminPaymentSettings,
   type ApiAdminPaymentStatus,
+  type ApiManualPaymentRecord,
   type ApiAnalytics,
   type ApiUserProfile,
 } from "@/lib/pixelforge-api";
@@ -100,7 +106,9 @@ const Index = () => {
   const [search, setSearch] = useState("");
   const [adminPaymentSettings, setAdminPaymentSettings] = useState<ApiAdminPaymentSettings | null>(null);
   const [adminPaymentStatus, setAdminPaymentStatus] = useState<ApiAdminPaymentStatus | null>(null);
+  const [manualPayments, setManualPayments] = useState<ApiManualPaymentRecord[]>([]);
   const [isSavingAdminSettings, setIsSavingAdminSettings] = useState(false);
+  const [isLoadingManualPayments, setIsLoadingManualPayments] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
   const isSuperAdmin =
     userProfile?.role === "SUPER_ADMIN" || userProfile?.unlimitedCredits || session?.user.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
@@ -286,6 +294,72 @@ const Index = () => {
       if (url) window.location.href = url;
     } catch {
       toast.error("Billing is not configured yet.");
+    }
+  };
+
+  const refreshManualPaymentQueue = async () => {
+    if (!isSuperAdmin) return;
+    setIsLoadingManualPayments(true);
+    try {
+      const payments = await fetchPendingManualPayments();
+      setManualPayments(payments);
+    } catch {
+      toast.warning("Manual payment queue could not be loaded.");
+    } finally {
+      setIsLoadingManualPayments(false);
+    }
+  };
+
+  const approveManualPaymentRecord = async (payment: ApiManualPaymentRecord) => {
+    const validUntil = window.prompt("Valid until date (YYYY-MM-DD). Leave blank for 30 days.", payment.validUntil?.slice(0, 10) ?? "");
+    const notes = window.prompt("Approval note", "Manual beta payment approved") ?? "Manual beta payment approved";
+    try {
+      await approveManualPayment(payment.id, { plan: payment.selectedPlan, validUntil: validUntil || undefined, notes });
+      await refreshManualPaymentQueue();
+      await refreshWorkspace();
+      toast.success("User approved and subscription activated.");
+    } catch {
+      toast.error("Manual payment approval failed.");
+    }
+  };
+
+  const rejectManualPaymentRecord = async (payment: ApiManualPaymentRecord) => {
+    const reason = window.prompt("Rejection reason", "Payment receipt could not be verified") ?? "Payment receipt could not be verified";
+    try {
+      await rejectManualPayment(payment.id, reason);
+      await refreshManualPaymentQueue();
+      toast.success("Payment rejected and audit record saved.");
+    } catch {
+      toast.error("Manual payment rejection failed.");
+    }
+  };
+
+  const extendManualPaymentRecord = async (payment: ApiManualPaymentRecord) => {
+    const validUntil = window.prompt("New expiry date (YYYY-MM-DD)", payment.validUntil?.slice(0, 10) ?? "");
+    if (!validUntil) {
+      toast.info("Extension cancelled because no date was provided.");
+      return;
+    }
+    const reason = window.prompt("Extension reason", "Manual subscription extended") ?? "Manual subscription extended";
+    try {
+      await extendManualSubscription(payment.userId, { validUntil, reason });
+      await refreshManualPaymentQueue();
+      await refreshWorkspace();
+      toast.success("Subscription extended.");
+    } catch {
+      toast.error("Subscription extension failed.");
+    }
+  };
+
+  const deactivateManualPaymentUser = async (payment: ApiManualPaymentRecord) => {
+    const reason = window.prompt("Deactivation reason", "Manual beta access deactivated") ?? "Manual beta access deactivated";
+    try {
+      await deactivateManualUser(payment.userId, reason);
+      await refreshManualPaymentQueue();
+      await refreshWorkspace();
+      toast.success("User deactivated.");
+    } catch {
+      toast.error("User deactivation failed.");
     }
   };
 
@@ -530,9 +604,16 @@ const Index = () => {
         <AdminPanel
           settings={adminPaymentSettings}
           status={adminPaymentStatus}
+          manualPayments={manualPayments}
           isSaving={isSavingAdminSettings}
+          isLoadingPayments={isLoadingManualPayments}
           onChange={setAdminPaymentSettings}
           onSave={saveAdminPaymentSettings}
+          onRefreshPayments={refreshManualPaymentQueue}
+          onApprovePayment={approveManualPaymentRecord}
+          onRejectPayment={rejectManualPaymentRecord}
+          onExtendSubscription={extendManualPaymentRecord}
+          onDeactivateUser={deactivateManualPaymentUser}
         />
       )}
 

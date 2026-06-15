@@ -61,9 +61,54 @@ export type ApiUserProfile = {
   credits: number | null;
   plan: "FREE" | "PRO" | "STUDIO";
   subscriptionStatus: "NONE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  paymentStatus?: "FREE" | "PENDING_PAYMENT" | "ACTIVE" | "EXPIRED" | "REJECTED" | "DEACTIVATED";
+  paymentReference?: string | null;
+  expiryDate?: string | null;
+  activatedByAdmin?: string | null;
   favorites?: string[];
   role?: "SUPER_ADMIN" | "USER";
   unlimitedCredits?: boolean;
+};
+
+export type ApiManualPaymentRecord = {
+  id: string;
+  userId: string;
+  customerEmail: string;
+  customerName: string | null;
+  selectedPlan: "PRO" | "STUDIO";
+  amount: string | null;
+  currency: string;
+  paymentMethod: string;
+  paymentReference: string | null;
+  invoiceNumber: string | null;
+  receiptFileName: string | null;
+  receiptFileUrl: string | null;
+  paymentStatus: string;
+  adminVerificationStatus: string;
+  verifiedByAdmin: string | null;
+  verifiedAt: string | null;
+  rejectionReason: string | null;
+  activatedPlan: string | null;
+  creditsGranted: number | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ManualPaymentReceiptInput = {
+  selectedPlan: "PRO" | "STUDIO";
+  customerName?: string;
+  amount?: string;
+  currency?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+  invoiceNumber?: string;
+  receiptFileName?: string;
+  receiptFileUrl?: string;
+  receiptFileStoragePath?: string;
+  notes?: string;
 };
 
 export type ApiAdminPaymentSettings = {
@@ -176,4 +221,53 @@ export const updateAdminPaymentSettings = async (settings: Partial<ApiAdminPayme
     body: JSON.stringify(settings),
   });
   return data.settings;
+};
+
+
+export const submitManualPaymentReceipt = async (input: ManualPaymentReceiptInput) => {
+  const data = await requestJson<{ ok: boolean; payment: ApiManualPaymentRecord }>("/api/beta-payment/upload-receipt", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return data.payment;
+};
+
+export const fetchPendingManualPayments = async () => {
+  const data = await requestJson<{ ok: boolean; payments: ApiManualPaymentRecord[] }>("/api/admin/manual-payments/pending");
+  return data.payments;
+};
+
+export const approveManualPayment = async (
+  paymentId: string,
+  input: { plan?: "PRO" | "STUDIO"; validUntil?: string; creditsGranted?: number; notes?: string } = {},
+) => {
+  const data = await requestJson<{ ok: boolean; payment: ApiManualPaymentRecord }>(`/api/admin/manual-payments/${paymentId}/approve`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return data.payment;
+};
+
+export const rejectManualPayment = async (paymentId: string, reason: string) => {
+  const data = await requestJson<{ ok: boolean; payment: ApiManualPaymentRecord }>(`/api/admin/manual-payments/${paymentId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+  return data.payment;
+};
+
+export const extendManualSubscription = async (userId: string, input: { validUntil?: string; credits?: number; reason?: string }) => {
+  const data = await requestJson<{ ok: boolean; user: ApiUserProfile }>(`/api/admin/users/${userId}/extend`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return data.user;
+};
+
+export const deactivateManualUser = async (userId: string, reason: string) => {
+  const data = await requestJson<{ ok: boolean; user: ApiUserProfile }>(`/api/admin/users/${userId}/deactivate`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+  return data.user;
 };

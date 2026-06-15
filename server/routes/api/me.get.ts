@@ -9,6 +9,6 @@ export default defineHandler(async (event) => {
   return {
     ok: true,
     authenticated: Boolean(authUser),
-    user: profile ?? (authUser ? { id: authUser.id, email: authUser.email, credits: null, plan: "FREE", subscriptionStatus: "NONE", role: "USER", unlimitedCredits: false } : null),
+    user: profile ?? (authUser ? { id: authUser.id, email: authUser.email, credits: null, plan: "FREE", subscriptionStatus: "NONE", paymentStatus: "FREE", paymentReference: null, expiryDate: null, activatedByAdmin: null, role: "USER", unlimitedCredits: false } : null),
   };
 });
