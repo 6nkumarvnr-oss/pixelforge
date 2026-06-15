@@ -44,7 +44,7 @@ export const ensureUser = async (authUser: AuthUser | null) => {
   const prisma = getPrisma();
   if (!prisma || !authUser) return null;
 
-  return prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { id: authUser.id },
     update: { email: authUser.email },
     create: {
@@ -54,6 +54,21 @@ export const ensureUser = async (authUser: AuthUser | null) => {
       favorites: [],
     },
   });
+
+  if (!isSuperAdmin(authUser) && user.paymentStatus === "ACTIVE" && user.expiryDate && user.expiryDate.getTime() < Date.now()) {
+    return prisma.user.update({
+      where: { id: user.id },
+      data: {
+        plan: "FREE",
+        credits: Math.min(user.credits, planCredits.FREE),
+        paymentStatus: "EXPIRED",
+        subscriptionStatus: "CANCELED",
+        subscriptionNotes: "Manual beta subscription expired; free/demo access remains available.",
+      },
+    });
+  }
+
+  return user;
 };
 
 export const getUserProfile = async (authUser: AuthUser | null): Promise<UserProfile | null> => {
