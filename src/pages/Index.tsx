@@ -52,18 +52,25 @@ import {
   type Preset,
 } from "@/lib/studio-data";
 import {
+  approveManualPayment,
   createBillingCheckout,
   createBillingPortal,
+  deactivateManualUser,
+  extendManualSubscription,
   fetchAdminPaymentSettings,
+  fetchPendingManualPayments,
   fetchPixelForgeAnalytics,
   fetchPixelForgeHistory,
   fetchPixelForgePresets,
   fetchPixelForgeUser,
   generatePixelForgeImage,
+  rejectManualPayment,
+  submitManualPaymentReceipt,
   updateAdminPaymentSettings,
   updatePixelForgeFavorite,
   type ApiAdminPaymentSettings,
   type ApiAdminPaymentStatus,
+  type ApiManualPaymentRecord,
   type ApiAnalytics,
   type ApiUserProfile,
 } from "@/lib/pixelforge-api";
@@ -100,7 +107,15 @@ const Index = () => {
   const [search, setSearch] = useState("");
   const [adminPaymentSettings, setAdminPaymentSettings] = useState<ApiAdminPaymentSettings | null>(null);
   const [adminPaymentStatus, setAdminPaymentStatus] = useState<ApiAdminPaymentStatus | null>(null);
+  const [manualPayments, setManualPayments] = useState<ApiManualPaymentRecord[]>([]);
   const [isSavingAdminSettings, setIsSavingAdminSettings] = useState(false);
+  const [isLoadingManualPayments, setIsLoadingManualPayments] = useState(false);
+  const [isSubmittingManualPayment, setIsSubmittingManualPayment] = useState(false);
+  const [manualPlan, setManualPlan] = useState<"PRO" | "STUDIO">("PRO");
+  const [manualPaymentMethod, setManualPaymentMethod] = useState("UPI");
+  const [manualPaymentAmount, setManualPaymentAmount] = useState("");
+  const [manualPaymentReference, setManualPaymentReference] = useState("");
+  const [manualReceiptReference, setManualReceiptReference] = useState("");
   const [hasGenerated, setHasGenerated] = useState(false);
   const isSuperAdmin =
     userProfile?.role === "SUPER_ADMIN" || userProfile?.unlimitedCredits || session?.user.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
@@ -225,6 +240,7 @@ const Index = () => {
     : String(userProfile?.credits ?? analytics?.user?.credits ?? Math.max(0, 25 - (analytics?.totals.creditsUsed ?? history.length)));
   const currentPlan = isSuperAdmin ? "STUDIO" : userProfile?.plan ?? analytics?.user?.plan ?? "FREE";
   const subscriptionStatus = isSuperAdmin ? "ACTIVE" : userProfile?.subscriptionStatus ?? analytics?.user?.subscriptionStatus ?? "NONE";
+  const manualPaymentStatus = isSuperAdmin ? "ACTIVE" : userProfile?.paymentStatus ?? "FREE";
 
   const applyPreset = (preset: Preset) => {
     setPrompt(preset.prompt);
@@ -286,6 +302,104 @@ const Index = () => {
       if (url) window.location.href = url;
     } catch {
       toast.error("Billing is not configured yet.");
+    }
+  };
+
+  const refreshManualPaymentQueue = async () => {
+    if (!isSuperAdmin) return;
+    setIsLoadingManualPayments(true);
+    try {
+      const payments = await fetchPendingManualPayments();
+      setManualPayments(payments);
+    } catch {
+      toast.warning("Manual payment queue could not be loaded.");
+    } finally {
+      setIsLoadingManualPayments(false);
+    }
+  };
+
+  const approveManualPaymentRecord = async (payment: ApiManualPaymentRecord) => {
+    const validUntil = window.prompt("Valid until date (YYYY-MM-DD). Leave blank for 30 days.", payment.validUntil?.slice(0, 10) ?? "");
+    const notes = window.prompt("Approval note", "Manual beta payment approved") ?? "Manual beta payment approved";
+    try {
+      await approveManualPayment(payment.id, { plan: payment.selectedPlan, validUntil: validUntil || undefined, notes });
+      await refreshManualPaymentQueue();
+      await refreshWorkspace();
+      toast.success("User approved and subscription activated.");
+    } catch {
+      toast.error("Manual payment approval failed.");
+    }
+  };
+
+  const rejectManualPaymentRecord = async (payment: ApiManualPaymentRecord) => {
+    const reason = window.prompt("Rejection reason", "Payment receipt could not be verified") ?? "Payment receipt could not be verified";
+    try {
+      await rejectManualPayment(payment.id, reason);
+      await refreshManualPaymentQueue();
+      toast.success("Payment rejected and audit record saved.");
+    } catch {
+      toast.error("Manual payment rejection failed.");
+    }
+  };
+
+  const extendManualPaymentRecord = async (payment: ApiManualPaymentRecord) => {
+    const validUntil = window.prompt("New expiry date (YYYY-MM-DD)", payment.validUntil?.slice(0, 10) ?? "");
+    if (!validUntil) {
+      toast.info("Extension cancelled because no date was provided.");
+      return;
+    }
+    const reason = window.prompt("Extension reason", "Manual subscription extended") ?? "Manual subscription extended";
+    try {
+      await extendManualSubscription(payment.userId, { validUntil, reason });
+      await refreshManualPaymentQueue();
+      await refreshWorkspace();
+      toast.success("Subscription extended.");
+    } catch {
+      toast.error("Subscription extension failed.");
+    }
+  };
+
+  const deactivateManualPaymentUser = async (payment: ApiManualPaymentRecord) => {
+    const reason = window.prompt("Deactivation reason", "Manual beta access deactivated") ?? "Manual beta access deactivated";
+    try {
+      await deactivateManualUser(payment.userId, reason);
+      await refreshManualPaymentQueue();
+      await refreshWorkspace();
+      toast.success("User deactivated.");
+    } catch {
+      toast.error("User deactivation failed.");
+    }
+  };
+
+  const submitManualBetaPayment = async () => {
+    if (!session) {
+      toast.error("Login before submitting a manual beta payment.");
+      return;
+    }
+    if (!manualPaymentReference.trim() && !manualReceiptReference.trim()) {
+      toast.error("Add a payment reference or receipt reference for admin verification.");
+      return;
+    }
+
+    setIsSubmittingManualPayment(true);
+    try {
+      await submitManualPaymentReceipt({
+        selectedPlan: manualPlan,
+        amount: manualPaymentAmount.trim() || undefined,
+        currency: adminPaymentSettings?.currency || "USD",
+        paymentMethod: manualPaymentMethod.trim() || "UPI",
+        paymentReference: manualPaymentReference.trim() || undefined,
+        receiptFileName: manualReceiptReference.trim() || undefined,
+        notes: "Manual beta payment submitted from PixelForge user portal",
+      });
+      setManualPaymentReference("");
+      setManualReceiptReference("");
+      await refreshWorkspace();
+      toast.success("Manual payment submitted for admin verification.");
+    } catch {
+      toast.error("Manual payment submission failed. Check login and try again.");
+    } finally {
+      setIsSubmittingManualPayment(false);
     }
   };
 
@@ -514,6 +628,38 @@ const Index = () => {
 
       <GuideSection />
 
+
+      {session && !isSuperAdmin && (
+        <section className="mx-auto w-full max-w-[1560px] px-4 pb-4 sm:px-6 lg:px-8">
+          <Card className="rounded-[2rem] border-white/80 bg-white/85 p-5 shadow-xl shadow-violet-100/60 backdrop-blur">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-3xl">
+                <Badge className={`mb-3 rounded-full border-0 ${manualPaymentStatus === "PENDING_PAYMENT" ? "bg-amber-200 text-amber-950 hover:bg-amber-200" : manualPaymentStatus === "ACTIVE" ? "bg-emerald-200 text-emerald-950 hover:bg-emerald-200" : manualPaymentStatus === "EXPIRED" ? "bg-rose-100 text-rose-700 hover:bg-rose-100" : "bg-violet-100 text-violet-800 hover:bg-violet-100"}`}>
+                  Manual payment status: {manualPaymentStatus}
+                </Badge>
+                <h2 className="text-2xl font-black tracking-tight text-slate-950">Manual beta activation</h2>
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                  Use this only after transferring payment by Arun-approved UPI/bank/manual invoice instructions. Do not enter card details or private banking credentials here.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[620px] lg:grid-cols-6">
+                <Select value={manualPlan} onValueChange={(value) => setManualPlan(value as "PRO" | "STUDIO")}>
+                  <SelectTrigger className="h-11 rounded-2xl border-violet-100 bg-white font-black"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="PRO">Pro Beta</SelectItem><SelectItem value="STUDIO">Studio Beta</SelectItem></SelectContent>
+                </Select>
+                <Input value={manualPaymentMethod} onChange={(event) => setManualPaymentMethod(event.target.value)} placeholder="UPI / Bank" className="h-11 rounded-2xl border-violet-100 bg-white font-semibold" />
+                <Input value={manualPaymentAmount} onChange={(event) => setManualPaymentAmount(event.target.value)} placeholder="Amount" className="h-11 rounded-2xl border-violet-100 bg-white font-semibold" />
+                <Input value={manualPaymentReference} onChange={(event) => setManualPaymentReference(event.target.value)} placeholder="Payment reference" className="h-11 rounded-2xl border-violet-100 bg-white font-semibold" />
+                <Input value={manualReceiptReference} onChange={(event) => setManualReceiptReference(event.target.value)} placeholder="Receipt file/link ref" className="h-11 rounded-2xl border-violet-100 bg-white font-semibold" />
+                <Button onClick={submitManualBetaPayment} disabled={isSubmittingManualPayment || manualPaymentStatus === "PENDING_PAYMENT"} className="h-11 rounded-2xl bg-violet-600 font-black text-white hover:bg-violet-700">
+                  {isSubmittingManualPayment ? "Submitting..." : manualPaymentStatus === "PENDING_PAYMENT" ? "Under review" : "Submit Receipt"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </section>
+      )}
+
       {!session && isSupabaseConfigured && (
         <div className="mx-auto w-full max-w-[1560px] px-4 pb-3 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2 rounded-[1.25rem] border border-amber-100 bg-amber-50 px-4 py-2.5">
@@ -530,9 +676,16 @@ const Index = () => {
         <AdminPanel
           settings={adminPaymentSettings}
           status={adminPaymentStatus}
+          manualPayments={manualPayments}
           isSaving={isSavingAdminSettings}
+          isLoadingPayments={isLoadingManualPayments}
           onChange={setAdminPaymentSettings}
           onSave={saveAdminPaymentSettings}
+          onRefreshPayments={refreshManualPaymentQueue}
+          onApprovePayment={approveManualPaymentRecord}
+          onRejectPayment={rejectManualPaymentRecord}
+          onExtendSubscription={extendManualPaymentRecord}
+          onDeactivateUser={deactivateManualPaymentUser}
         />
       )}
 

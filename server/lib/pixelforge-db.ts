@@ -9,6 +9,10 @@ export type UserProfile = {
   credits: number | null;
   plan: "FREE" | "PRO" | "STUDIO";
   subscriptionStatus: "NONE" | "ACTIVE" | "PAST_DUE" | "CANCELED";
+  paymentStatus: ManualUserPaymentStatus;
+  paymentReference: string | null;
+  expiryDate: string | null;
+  activatedByAdmin: string | null;
   favorites: string[];
   role: "SUPER_ADMIN" | "USER";
   unlimitedCredits: boolean;
@@ -40,7 +44,7 @@ export const ensureUser = async (authUser: AuthUser | null) => {
   const prisma = getPrisma();
   if (!prisma || !authUser) return null;
 
-  return prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { id: authUser.id },
     update: { email: authUser.email },
     create: {
@@ -50,6 +54,21 @@ export const ensureUser = async (authUser: AuthUser | null) => {
       favorites: [],
     },
   });
+
+  if (!isSuperAdmin(authUser) && user.paymentStatus === "ACTIVE" && user.expiryDate && user.expiryDate.getTime() < Date.now()) {
+    return prisma.user.update({
+      where: { id: user.id },
+      data: {
+        plan: "FREE",
+        credits: Math.min(user.credits, planCredits.FREE),
+        paymentStatus: "EXPIRED",
+        subscriptionStatus: "CANCELED",
+        subscriptionNotes: "Manual beta subscription expired; free/demo access remains available.",
+      },
+    });
+  }
+
+  return user;
 };
 
 export const getUserProfile = async (authUser: AuthUser | null): Promise<UserProfile | null> => {
@@ -64,6 +83,10 @@ export const getUserProfile = async (authUser: AuthUser | null): Promise<UserPro
     credits: superAdmin ? null : user.credits,
     plan: superAdmin ? "STUDIO" : user.plan,
     subscriptionStatus: superAdmin ? "ACTIVE" : user.subscriptionStatus,
+    paymentStatus: superAdmin ? "ACTIVE" : (user.paymentStatus as ManualUserPaymentStatus),
+    paymentReference: user.paymentReference,
+    expiryDate: user.expiryDate?.toISOString() ?? null,
+    activatedByAdmin: user.activatedByAdmin,
     favorites: toStringArray(user.favorites),
     role: superAdmin ? "SUPER_ADMIN" : "USER",
     unlimitedCredits: superAdmin,
@@ -437,4 +460,375 @@ export const applyBillingPlan = async ({
       stripeSubscriptionId: stripeSubscriptionId ?? undefined,
     },
   });
+};
+
+export type ManualPaymentStatus = "PENDING_RECEIPT" | "RECEIPT_UPLOADED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "REFUNDED";
+export type ManualUserPaymentStatus = "FREE" | "PENDING_PAYMENT" | "ACTIVE" | "EXPIRED" | "REJECTED" | "DEACTIVATED";
+export type ManualPaidPlan = "PRO" | "STUDIO";
+
+export type ManualPaymentRecordDto = {
+  id: string;
+  userId: string;
+  customerEmail: string;
+  customerName: string | null;
+  selectedPlan: ManualPaidPlan;
+  amount: string | null;
+  currency: string;
+  paymentMethod: string;
+  paymentReference: string | null;
+  invoiceNumber: string | null;
+  receiptFileName: string | null;
+  receiptFileUrl: string | null;
+  paymentStatus: string;
+  adminVerificationStatus: string;
+  verifiedByAdmin: string | null;
+  verifiedAt: string | null;
+  rejectionReason: string | null;
+  activatedPlan: string | null;
+  creditsGranted: number | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const manualPlanCredits = {
+  PRO: planCredits.PRO,
+  STUDIO: planCredits.STUDIO,
+} as const;
+
+const toManualPaymentDto = (record: {
+  id: string;
+  userId: string;
+  customerEmail: string;
+  customerName: string | null;
+  selectedPlan: string;
+  amount: unknown;
+  currency: string;
+  paymentMethod: string;
+  paymentReference: string | null;
+  invoiceNumber: string | null;
+  receiptFileName: string | null;
+  receiptFileUrl: string | null;
+  paymentStatus: string;
+  adminVerificationStatus: string;
+  verifiedByAdmin: string | null;
+  verifiedAt: Date | null;
+  rejectionReason: string | null;
+  activatedPlan: string | null;
+  creditsGranted: number | null;
+  validFrom: Date | null;
+  validUntil: Date | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): ManualPaymentRecordDto => ({
+  id: record.id,
+  userId: record.userId,
+  customerEmail: record.customerEmail,
+  customerName: record.customerName,
+  selectedPlan: record.selectedPlan === "STUDIO" ? "STUDIO" : "PRO",
+  amount: record.amount == null ? null : String(record.amount),
+  currency: record.currency,
+  paymentMethod: record.paymentMethod,
+  paymentReference: record.paymentReference,
+  invoiceNumber: record.invoiceNumber,
+  receiptFileName: record.receiptFileName,
+  receiptFileUrl: record.receiptFileUrl,
+  paymentStatus: record.paymentStatus,
+  adminVerificationStatus: record.adminVerificationStatus,
+  verifiedByAdmin: record.verifiedByAdmin,
+  verifiedAt: record.verifiedAt?.toISOString() ?? null,
+  rejectionReason: record.rejectionReason,
+  activatedPlan: record.activatedPlan,
+  creditsGranted: record.creditsGranted,
+  validFrom: record.validFrom?.toISOString() ?? null,
+  validUntil: record.validUntil?.toISOString() ?? null,
+  notes: record.notes,
+  createdAt: record.createdAt.toISOString(),
+  updatedAt: record.updatedAt.toISOString(),
+});
+
+const cleanManualPlan = (value: unknown): ManualPaidPlan => (value === "STUDIO" ? "STUDIO" : "PRO");
+const cleanShortText = (value: unknown, maxLength = 180) => (typeof value === "string" ? value.trim().slice(0, maxLength) : "");
+
+export const submitManualPaymentReceipt = async (authUser: AuthUser | null, input: Record<string, unknown>) => {
+  const prisma = getPrisma();
+  if (!prisma || !authUser) return null;
+
+  const user = await ensureUser(authUser);
+  if (!user) return null;
+
+  const selectedPlan = cleanManualPlan(input.selectedPlan);
+  const record = await prisma.manualPaymentRecord.create({
+    data: {
+      userId: user.id,
+      customerEmail: user.email,
+      customerName: cleanShortText(input.customerName, 120) || null,
+      selectedPlan,
+      amount: cleanShortText(input.amount, 24) || null,
+      currency: (cleanShortText(input.currency, 12) || "USD").toUpperCase(),
+      paymentMethod: cleanShortText(input.paymentMethod, 40) || "UPI",
+      paymentReference: cleanShortText(input.paymentReference, 160) || null,
+      invoiceNumber: cleanShortText(input.invoiceNumber, 80) || null,
+      receiptFileName: cleanShortText(input.receiptFileName, 180) || null,
+      receiptFileUrl: cleanShortText(input.receiptFileUrl, 500) || null,
+      receiptFileStoragePath: cleanShortText(input.receiptFileStoragePath, 500) || null,
+      paymentStatus: "RECEIPT_UPLOADED",
+      adminVerificationStatus: "PENDING",
+      notes: cleanShortText(input.notes, 500) || null,
+    },
+  });
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      paymentStatus: "PENDING_PAYMENT",
+      paymentReference: record.paymentReference,
+      subscriptionNotes: `Manual ${selectedPlan} payment submitted for admin review`,
+    },
+  });
+
+  return toManualPaymentDto(record);
+};
+
+export const listManualPaymentQueue = async (limit = 50) => {
+  const prisma = getPrisma();
+  if (!prisma) return null;
+
+  const records = await prisma.manualPaymentRecord.findMany({
+    orderBy: { createdAt: "desc" },
+    take: Math.min(Math.max(limit, 1), 100),
+  });
+
+  return records.map(toManualPaymentDto);
+};
+
+const createAdminAuditLog = async ({
+  adminUserId,
+  targetUserId,
+  actionType,
+  previousStatus,
+  newStatus,
+  previousPlan,
+  newPlan,
+  previousExpiryDate,
+  newExpiryDate,
+  paymentRecordId,
+  reason,
+}: {
+  adminUserId: string;
+  targetUserId: string;
+  actionType: string;
+  previousStatus?: string | null;
+  newStatus?: string | null;
+  previousPlan?: string | null;
+  newPlan?: string | null;
+  previousExpiryDate?: Date | null;
+  newExpiryDate?: Date | null;
+  paymentRecordId?: string | null;
+  reason?: string | null;
+}) => {
+  const prisma = getPrisma();
+  if (!prisma) return null;
+  return prisma.adminAuditLog.create({
+    data: {
+      adminUserId,
+      targetUserId,
+      actionType,
+      previousStatus,
+      newStatus,
+      previousPlan,
+      newPlan,
+      previousExpiryDate,
+      newExpiryDate,
+      paymentRecordId,
+      reason,
+    },
+  });
+};
+
+export const approveManualPayment = async (adminUser: AuthUser, paymentId: string, input: Record<string, unknown>) => {
+  const prisma = getPrisma();
+  if (!prisma) return null;
+
+  const record = await prisma.manualPaymentRecord.findUnique({ where: { id: paymentId } });
+  if (!record) return null;
+  const user = await prisma.user.findUnique({ where: { id: record.userId } });
+  if (!user) return null;
+
+  const plan = cleanManualPlan(input.plan ?? record.selectedPlan);
+  const creditsGranted = Number(input.creditsGranted ?? manualPlanCredits[plan]) || manualPlanCredits[plan];
+  const validUntilInput = cleanShortText(input.validUntil, 40);
+  const validUntil = validUntilInput ? new Date(validUntilInput) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const validFrom = new Date();
+
+  const [updatedRecord] = await prisma.$transaction([
+    prisma.manualPaymentRecord.update({
+      where: { id: record.id },
+      data: {
+        paymentStatus: "APPROVED",
+        adminVerificationStatus: "APPROVED",
+        verifiedByAdmin: adminUser.email,
+        verifiedAt: validFrom,
+        activatedPlan: plan,
+        creditsGranted,
+        validFrom,
+        validUntil,
+        notes: cleanShortText(input.notes, 500) || record.notes,
+      },
+    }),
+    prisma.user.update({
+      where: { id: user.id },
+      data: {
+        plan,
+        credits: creditsGranted,
+        paymentStatus: "ACTIVE",
+        subscriptionStatus: "ACTIVE",
+        paymentReference: record.paymentReference,
+        expiryDate: validUntil,
+        activatedByAdmin: adminUser.email,
+        activatedAt: validFrom,
+        deactivatedAt: null,
+        subscriptionNotes: cleanShortText(input.notes, 500) || `Manual ${plan} subscription approved`,
+      },
+    }),
+  ]);
+
+  await createAdminAuditLog({
+    adminUserId: adminUser.id,
+    targetUserId: user.id,
+    actionType: "APPROVE_USER",
+    previousStatus: user.paymentStatus,
+    newStatus: "ACTIVE",
+    previousPlan: user.plan,
+    newPlan: plan,
+    previousExpiryDate: user.expiryDate,
+    newExpiryDate: validUntil,
+    paymentRecordId: record.id,
+    reason: cleanShortText(input.notes, 500) || "Manual payment approved",
+  });
+
+  return toManualPaymentDto(updatedRecord);
+};
+
+export const rejectManualPayment = async (adminUser: AuthUser, paymentId: string, reason: string) => {
+  const prisma = getPrisma();
+  if (!prisma) return null;
+
+  const record = await prisma.manualPaymentRecord.findUnique({ where: { id: paymentId } });
+  if (!record) return null;
+  const user = await prisma.user.findUnique({ where: { id: record.userId } });
+  if (!user) return null;
+
+  const cleanedReason = reason.trim().slice(0, 500) || "Manual payment rejected by admin";
+  const [updatedRecord] = await prisma.$transaction([
+    prisma.manualPaymentRecord.update({
+      where: { id: record.id },
+      data: {
+        paymentStatus: "REJECTED",
+        adminVerificationStatus: "REJECTED",
+        verifiedByAdmin: adminUser.email,
+        verifiedAt: new Date(),
+        rejectionReason: cleanedReason,
+      },
+    }),
+    prisma.user.update({
+      where: { id: user.id },
+      data: {
+        paymentStatus: "REJECTED",
+        subscriptionNotes: cleanedReason,
+      },
+    }),
+  ]);
+
+  await createAdminAuditLog({
+    adminUserId: adminUser.id,
+    targetUserId: user.id,
+    actionType: "REJECT_USER",
+    previousStatus: user.paymentStatus,
+    newStatus: "REJECTED",
+    previousPlan: user.plan,
+    newPlan: user.plan,
+    previousExpiryDate: user.expiryDate,
+    newExpiryDate: user.expiryDate,
+    paymentRecordId: record.id,
+    reason: cleanedReason,
+  });
+
+  return toManualPaymentDto(updatedRecord);
+};
+
+export const extendManualSubscription = async (adminUser: AuthUser, userId: string, input: Record<string, unknown>) => {
+  const prisma = getPrisma();
+  if (!prisma) return null;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return null;
+
+  const validUntilInput = cleanShortText(input.validUntil, 40);
+  const validUntil = validUntilInput ? new Date(validUntilInput) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const credits = Number(input.credits ?? user.credits) || user.credits;
+  const reason = cleanShortText(input.reason, 500) || "Manual subscription extended";
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      paymentStatus: "ACTIVE",
+      subscriptionStatus: "ACTIVE",
+      expiryDate: validUntil,
+      credits,
+      subscriptionNotes: reason,
+    },
+  });
+
+  await createAdminAuditLog({
+    adminUserId: adminUser.id,
+    targetUserId: user.id,
+    actionType: "EXTEND_SUBSCRIPTION",
+    previousStatus: user.paymentStatus,
+    newStatus: "ACTIVE",
+    previousPlan: user.plan,
+    newPlan: updated.plan,
+    previousExpiryDate: user.expiryDate,
+    newExpiryDate: validUntil,
+    reason,
+  });
+
+  return updated;
+};
+
+export const deactivateManualUser = async (adminUser: AuthUser, userId: string, reasonInput: string) => {
+  const prisma = getPrisma();
+  if (!prisma) return null;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return null;
+  const reason = reasonInput.trim().slice(0, 500) || "Manual deactivation by admin";
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      paymentStatus: "DEACTIVATED",
+      subscriptionStatus: "CANCELED",
+      deactivatedAt: new Date(),
+      subscriptionNotes: reason,
+    },
+  });
+
+  await createAdminAuditLog({
+    adminUserId: adminUser.id,
+    targetUserId: user.id,
+    actionType: "DEACTIVATE_USER",
+    previousStatus: user.paymentStatus,
+    newStatus: "DEACTIVATED",
+    previousPlan: user.plan,
+    newPlan: updated.plan,
+    previousExpiryDate: user.expiryDate,
+    newExpiryDate: updated.expiryDate,
+    reason,
+  });
+
+  return updated;
 };
