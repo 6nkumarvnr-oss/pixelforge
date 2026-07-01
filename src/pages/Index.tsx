@@ -72,7 +72,8 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 import type { Session } from "@supabase/supabase-js";
 import { toast } from "sonner";
 
-const SUPER_ADMIN_EMAIL = "6nkumar.vnr@gmail.com";
+// ValorStruct / Meiveeram ecosystem admin emails. Real enforcement lives server-side in server/lib/admin.ts — this is cosmetic only.
+const ADMIN_EMAILS = ["6nkumar.vnr@gmail.com", "arun@valorstruct.com"];
 
 const Index = () => {
   const [prompt, setPrompt] = useState(builtinPresets[0].prompt);
@@ -103,7 +104,7 @@ const Index = () => {
   const [isSavingAdminSettings, setIsSavingAdminSettings] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
   const isSuperAdmin =
-    userProfile?.role === "SUPER_ADMIN" || userProfile?.unlimitedCredits || session?.user.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
+    userProfile?.role === "SUPER_ADMIN" || userProfile?.unlimitedCredits || (session?.user.email ? ADMIN_EMAILS.includes(session.user.email.toLowerCase()) : false);
   const isFallback = apiStatus === "fallback" || analytics?.fallbackActive === true;
   const modeLabel = apiStatus === "connecting" ? "Connecting" : isFallback ? "Demo / Fallback" : "Online";
 
