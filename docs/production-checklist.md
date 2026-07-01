@@ -2,7 +2,7 @@
 
 ## Secrets
 
-Never store passwords, API keys, Supabase service-role keys, Stripe secrets, or database URLs in source code or chat. Put real values in Dyad's Environment Variables panel and the Vercel project settings.
+Never store passwords, API keys, Supabase service-role keys, Stripe secrets, or database URLs in source code or chat. Put real values in the Vercel project settings (Production and Preview environments).
 
 Required variables are listed in `.env.example`.
 
